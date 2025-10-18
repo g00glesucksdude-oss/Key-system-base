@@ -1,0 +1,65 @@
+local salt = "monkey" -- assign salt value
+
+-- Create GUI
+local gui = Instance.new("ScreenGui")
+local frame = Instance.new("Frame")
+local input = Instance.new("TextBox")
+local button = Instance.new("TextButton")
+local output = Instance.new("TextLabel")
+
+frame.Size = UDim2.new(0, 300, 0, 200)
+frame.Position = UDim2.new(0.5, -150, 0.5, -100)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.Parent = gui
+
+input.Size = UDim2.new(1, -20, 0, 30)
+input.Position = UDim2.new(0, 10, 0, 10)
+input.PlaceholderText = "Enter your key"
+input.Parent = frame
+
+button.Size = UDim2.new(1, -20, 0, 30)
+button.Position = UDim2.new(0, 10, 0, 50)
+button.Text = "Validate"
+button.Parent = frame
+
+output.Size = UDim2.new(1, -20, 0, 100)
+output.Position = UDim2.new(0, 10, 0, 90)
+output.Text = ""
+output.BackgroundTransparency = 1
+output.TextColor3 = Color3.new(1, 1, 1)
+output.Parent = frame
+
+gui.Parent = game.CoreGui
+
+-- Base64 decoding function
+local function b64decode(data)
+    -- ... (rest of the b64decode function remains the same)
+end
+
+-- Function to validate key
+local function validateKey(key)
+    local decodedKey = b64decode(key)
+    local saltedDecodedKey = decodedKey:sub(1, -#salt - 1)
+    local extractedSalt = decodedKey:sub(-#salt)
+
+    if extractedSalt == salt then
+        -- Extract important data from decoded key
+        local expiry = tonumber(saltedDecodedKey:match("(%d+)"))
+        local currentTime = os.time()
+        local timeRemaining = expiry - currentTime
+        local changingNumber = math.floor(currentTime / 60)
+
+        output.Text = "Decrypted salt value: " .. extractedSalt .. "\n"
+        output.Text = output.Text .. "Expiration time: " .. os.date("%Y-%m-%d %H:%M:%S", expiry) .. "\n"
+        output.Text = output.Text .. "Time remaining: " .. timeRemaining .. " seconds\n"
+        output.Text = output.Text .. "Changing number: " .. changingNumber
+    else
+        output.Text = "Invalid salt"
+    end
+end
+
+-- Button click event
+button.MouseButton1Click:Connect(function()
+    local key = input.Text
+    validateKey(key)
+end)
