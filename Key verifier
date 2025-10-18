@@ -1,5 +1,54 @@
 local salt = "monkey" -- assign salt value
 
+-- Base64 decoding function
+local function b64decode(data)
+    local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    local b64lookup = {}
+    for i = 1, #b64chars do
+        b64lookup[b64chars:sub(i, i)] = i - 1
+    end
+
+    data = data:gsub("=", "")
+    local bytes = {}
+    for i = 1, #data, 4 do
+        local byte1 = b64lookup[data:sub(i, i)] * 4 + math.floor(b64lookup[data:sub(i + 1, i + 1)] / 16)
+        local byte2 = (b64lookup[data:sub(i + 1, i + 1)] % 16) * 16 + math.floor(b64lookup[data:sub(i + 2, i + 2)] / 4)
+        local byte3 = (b64lookup[data:sub(i + 2, i + 2)] % 4) * 64 + b64lookup[data:sub(i + 3, i + 3)]
+
+        table.insert(bytes, string.char(byte1))
+        if data:sub(i + 2, i + 2) ~= "=" then
+            table.insert(bytes, string.char(byte2))
+        end
+        if data:sub(i + 3, i + 3) ~= "=" then
+            table.insert(bytes, string.char(byte3))
+        end
+    end
+
+    return table.concat(bytes)
+end
+
+-- Function to validate key
+local function validateKey(key)
+    local decodedKey = b64decode(key)
+    local saltedDecodedKey = decodedKey:sub(1, -#salt - 1)
+    local extractedSalt = decodedKey:sub(-#salt)
+
+    if extractedSalt == salt then
+        -- Extract important data from decoded key
+        local expiry = tonumber(saltedDecodedKey:match("(%d+)"))
+        local currentTime = os.time()
+        local timeRemaining = expiry - currentTime
+        local changingNumber = math.floor(currentTime / 60)
+
+        output.Text = "Decrypted salt value: " .. extractedSalt .. "\n"
+        output.Text = output.Text .. "Expiration time: " .. os.date("%Y-%m-%d %H:%M:%S", expiry) .. "\n"
+        output.Text = output.Text .. "Time remaining: " .. timeRemaining .. " seconds\n"
+        output.Text = output.Text .. "Changing number: " .. changingNumber
+    else
+        output.Text = "Invalid salt"
+    end
+end
+
 -- Create GUI
 local gui = Instance.new("ScreenGui")
 local frame = Instance.new("Frame")
@@ -40,50 +89,4 @@ output.TextColor3 = Color3.new(1, 1, 1)
 output.FontSize = Enum.FontSize.Size14
 output.Parent = frame
 
-closeButton.Size = UDim2.new(0, 30, 0, 30)
-closeButton.Position = UDim2.new(1, -35, 0, 5)
-closeButton.Text = "X"
-closeButton.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
-closeButton.TextColor3 = Color3.new(1, 1, 1)
-closeButton.BorderSizePixel = 1
-closeButton.Parent = frame
-
-gui.Parent = game.CoreGui
-
--- Base64 decoding function
-local function b64decode(data)
-    -- ... (rest of the b64decode function remains the same)
-end
-
--- Function to validate key
-local function validateKey(key)
-    local decodedKey = b64decode(key)
-    local saltedDecodedKey = decodedKey:sub(1, -#salt - 1)
-    local extractedSalt = decodedKey:sub(-#salt)
-
-    if extractedSalt == salt then
-        -- Extract important data from decoded key
-        local expiry = tonumber(saltedDecodedKey:match("(%d+)"))
-        local currentTime = os.time()
-        local timeRemaining = expiry - currentTime
-        local changingNumber = math.floor(currentTime / 60)
-
-        output.Text = "Decrypted salt value: " .. extractedSalt .. "\n"
-        output.Text = output.Text .. "Expiration time: " .. os.date("%Y-%m-%d %H:%M:%S", expiry) .. "\n"
-        output.Text = output.Text .. "Time remaining: " .. timeRemaining .. " seconds\n"
-        output.Text = output.Text .. "Changing number: " .. changingNumber
-    else
-        output.Text = "Invalid salt"
-    end
-end
-
--- Button click event
-button.MouseButton1Click:Connect(function()
-    local key = input.Text
-    validateKey(key)
-end)
-
--- Close button click event
-closeButton.MouseButton1Click:Connect(function()
-    gui:Destroy()
-end)
+closeButton.Size = UDim2.new(0, 30, 0
