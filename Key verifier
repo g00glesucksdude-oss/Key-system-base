@@ -1,7 +1,7 @@
-local salt = "monkey"  -- Must match the Python generator
-local key = input.Text -- From GUI
+local salt = "monkey"
+local inputBox = script.Parent.Parent.InputBox
+local outputLabel = script.Parent.Parent.OutputLabel
 
--- Base64 decoder
 local function b64decode(data)
     local b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     local lookup = {}
@@ -27,35 +27,52 @@ local function b64decode(data)
     return table.concat(bytes)
 end
 
--- SHA-256 (requires Roblox-compatible implementation or plugin)
-local function sha256(data)
-    -- Replace this with your SHA-256 module
-    return require(script.SHA256)(data)
+local function sha256_hmac(data, key)
+    return require(script.Parent.SHA256_HMAC)(data, key)
 end
 
--- Key validation
-local function validateAvalancheKey(encodedKey)
-    local decodedHash = b64decode(encodedKey)
-    local now = os.time()
-
-    for offset = -5, 5 do
-        local expiry = now + offset
-        for nonce = 0, 999999 do
-            local nonceStr = string.format("%06d", nonce)
-            local raw = expiry .. "|" .. salt .. "|" .. nonceStr
-            local hash = sha256(raw)
-
-            if hash == decodedHash then
-                output.Text = string.format(
-                    "✅ Valid key\n🕒 Expiry: %s\n⏳ Remaining: %d seconds\n🔁 Nonce: %s",
-                    os.date("%Y-%m-%d %H:%M:%S", expiry),
-                    expiry - now,
-                    nonceStr
-                )
-                return
-            end
-        end
+local function validateKey(encodedKey)
+    local decoded = b64decode(encodedKey)
+    local parts = string.split(decoded, "|")
+    if #parts ~= 3 then
+        outputLabel.Text = "❌ Invalid key format"
+        return
     end
 
-    output.Text = "❌ Invalid or expired key"
+    local expiry = tonumber(parts[1])
+    local nonce = parts[2]
+    local hash = parts[3]
+
+    if not expiry or not nonce or not hash then
+        outputLabel.Text = "❌ Malformed key"
+        return
+    end
+
+    if expiry < os.time() then
+        outputLabel.Text = "❌ Key expired"
+        return
+    end
+
+    if expiry > os.time() + 3600 then
+        outputLabel.Text = "❌ Expiry exceeds allowed range"
+        return
+    end
+
+    local raw = expiry .. "|" .. nonce
+    local expected = sha256_hmac(raw, salt)
+
+    if expected == hash then
+        outputLabel.Text = string.format(
+            "✅ Valid key\n🕒 Expiry: %s\n⏳ Remaining: %d seconds\n🔁 Nonce: %s",
+            os.date("%Y-%m-%d %H:%M:%S", expiry),
+            expiry - os.time(),
+            nonce
+        )
+    else
+        outputLabel.Text = "❌ Tampered or invalid key"
+    end
 end
+
+script.Parent.MouseButton1Click:Connect(function()
+    validateKey(inputBox.Text)
+end)
