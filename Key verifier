@@ -1,11 +1,11 @@
--- 🔐 CONFIG
-local SALT = "monkey"
+local salt = "monkey"  -- Must match the Python generator
+local key = input.Text -- From GUI
 
--- 🔓 Base64 decoder (safe, compact)
+-- Base64 decoder
 local function b64decode(data)
-    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     local lookup = {}
-    for i = 1, #chars do lookup[chars:sub(i, i)] = i - 1 end
+    for i = 1, #b64chars do lookup[b64chars:sub(i, i)] = i - 1 end
     data = data:gsub("=", "")
     local bytes = {}
 
@@ -27,104 +27,35 @@ local function b64decode(data)
     return table.concat(bytes)
 end
 
--- 🧪 Key validation logic
-local function validateKey(key, outputLabel)
-    local decoded = b64decode(key)
-    if not decoded or #decoded < #SALT then
-        outputLabel.Text = "❌ Invalid key format"
-        return
-    end
-
-    local extractedSalt = decoded:sub(-#SALT)
-    local payload = decoded:sub(1, #decoded - #SALT)
-
-    if extractedSalt ~= SALT then
-        outputLabel.Text = "❌ Salt mismatch"
-        return
-    end
-
-    local expiry = tonumber(payload:match("(%d+)"))
-    if not expiry then
-        outputLabel.Text = "❌ Expiry timestamp missing"
-        return
-    end
-
-    local now = os.time()
-    local remaining = expiry - now
-    local changingNumber = math.floor(now / 60)
-
-    outputLabel.Text = string.format(
-        "✅ Salt: %s\n🕒 Expiry: %s\n⏳ Remaining: %d seconds\n🔁 Changing #: %d",
-        extractedSalt,
-        os.date("%Y-%m-%d %H:%M:%S", expiry),
-        remaining,
-        changingNumber
-    )
+-- SHA-256 (requires Roblox-compatible implementation or plugin)
+local function sha256(data)
+    -- Replace this with your SHA-256 module
+    return require(script.SHA256)(data)
 end
 
--- 🖼️ GUI Setup
-local gui = Instance.new("ScreenGui")
-local frame = Instance.new("Frame")
-local input = Instance.new("TextBox")
-local button = Instance.new("TextButton")
-local output = Instance.new("TextLabel")
-local close = Instance.new("TextButton")
+-- Key validation
+local function validateAvalancheKey(encodedKey)
+    local decodedHash = b64decode(encodedKey)
+    local now = os.time()
 
-frame.Size = UDim2.new(0, 320, 0, 260)
-frame.Position = UDim2.new(0.5, -160, 0.5, -130)
-frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-frame.BorderSizePixel = 2
-frame.BorderColor3 = Color3.fromRGB(60, 60, 60)
-frame.Draggable = true
-frame.Parent = gui
+    for offset = -5, 5 do
+        local expiry = now + offset
+        for nonce = 0, 999999 do
+            local nonceStr = string.format("%06d", nonce)
+            local raw = expiry .. "|" .. salt .. "|" .. nonceStr
+            local hash = sha256(raw)
 
-input.Size = UDim2.new(1, -20, 0, 30)
-input.Position = UDim2.new(0, 10, 0, 10)
-input.PlaceholderText = "🔑 Enter your key"
-input.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-input.TextColor3 = Color3.new(1, 1, 1)
-input.BorderSizePixel = 1
-input.Parent = frame
-
-button.Size = UDim2.new(1, -20, 0, 30)
-button.Position = UDim2.new(0, 10, 0, 50)
-button.Text = "✅ Validate"
-button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-button.TextColor3 = Color3.new(1, 1, 1)
-button.BorderSizePixel = 1
-button.Parent = frame
-
-output.Size = UDim2.new(1, -20, 0, 120)
-output.Position = UDim2.new(0, 10, 0, 90)
-output.Text = ""
-output.BackgroundTransparency = 1
-output.TextColor3 = Color3.new(1, 1, 1)
-output.TextWrapped = true
-output.TextYAlignment = Enum.TextYAlignment.Top
-output.FontSize = Enum.FontSize.Size14
-output.Parent = frame
-
-close.Size = UDim2.new(0, 30, 0, 30)
-close.Position = UDim2.new(1, -35, 0, 5)
-close.Text = "✖"
-close.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
-close.TextColor3 = Color3.new(1, 1, 1)
-close.BorderSizePixel = 1
-close.Parent = frame
-
-gui.Parent = game:GetService("CoreGui")
-
--- 🎯 Events
-button.MouseButton1Click:Connect(function()
-    local success, err = pcall(function()
-        validateKey(input.Text, output)
-    end)
-    if not success then
-        output.Text = "💥 Internal error:\n" .. tostring(err)
-        warn("Validation crash:", err)
+            if hash == decodedHash then
+                output.Text = string.format(
+                    "✅ Valid key\n🕒 Expiry: %s\n⏳ Remaining: %d seconds\n🔁 Nonce: %s",
+                    os.date("%Y-%m-%d %H:%M:%S", expiry),
+                    expiry - now,
+                    nonceStr
+                )
+                return
+            end
+        end
     end
-end)
 
-close.MouseButton1Click:Connect(function()
-    gui:Destroy()
-end)
+    output.Text = "❌ Invalid or expired key"
+end
