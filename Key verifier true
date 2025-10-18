@@ -1,0 +1,130 @@
+local salt = "monkey"
+
+-- GUI setup
+local gui = Instance.new("ScreenGui")
+gui.Name = "KeyValidatorGui"
+gui.ResetOnSpawn = false
+gui.Parent = game:GetService("CoreGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 420, 0, 220)
+frame.Position = UDim2.new(0.5, -210, 0.5, -110)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderSizePixel = 0
+frame.Parent = gui
+
+local inputBox = Instance.new("TextBox")
+inputBox.Size = UDim2.new(1, -20, 0, 40)
+inputBox.Position = UDim2.new(0, 10, 0, 10)
+inputBox.PlaceholderText = "Paste your key here"
+inputBox.TextScaled = true
+inputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+inputBox.TextColor3 = Color3.new(1, 1, 1)
+inputBox.Parent = frame
+
+local outputLabel = Instance.new("TextLabel")
+outputLabel.Size = UDim2.new(1, -20, 0, 80)
+outputLabel.Position = UDim2.new(0, 10, 0, 60)
+outputLabel.Text = "Awaiting input..."
+outputLabel.TextScaled = true
+outputLabel.TextWrapped = true
+outputLabel.BackgroundTransparency = 1
+outputLabel.TextColor3 = Color3.new(1, 1, 1)
+outputLabel.Parent = frame
+
+local validateButton = Instance.new("TextButton")
+validateButton.Size = UDim2.new(0.5, -15, 0, 40)
+validateButton.Position = UDim2.new(0, 10, 0, 150)
+validateButton.Text = "Validate Key"
+validateButton.TextScaled = true
+validateButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+validateButton.TextColor3 = Color3.new(1, 1, 1)
+validateButton.Parent = frame
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0.5, -15, 0, 40)
+closeButton.Position = UDim2.new(0.5, 5, 0, 150)
+closeButton.Text = "Close"
+closeButton.TextScaled = true
+closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+closeButton.Parent = frame
+
+-- CryptoLib HMAC
+local sha256_hmac = function(data, key)
+    local crypto = require(game:GetService("ReplicatedStorage"):WaitForChild("CryptoLib"))
+    return crypto.hmac_sha256(data, key) -- returns raw bytes
+end
+
+-- Base64 decode
+local function b64decode(data)
+    local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    data = data:gsub('[^'..b..'=]', '')
+    return (data:gsub('.', function(x)
+        if x == '=' then return '' end
+        local r,f = '',(b:find(x)-1)
+        for i=6,1,-1 do r=r..(f%2^i - f%2^(i-1) > 0 and '1' or '0') end
+        return r
+    end):gsub('%d%d%d%d%d%d%d%d', function(x)
+        return string.char(tonumber(x,2))
+    end))
+end
+
+-- Hexify
+local function toHex(str)
+    return (str:gsub('.', function(c)
+        return string.format('%02x', string.byte(c))
+    end))
+end
+
+-- Validate key
+local function validate(encoded)
+    print("🔍 Encoded input:", encoded)
+
+    local decoded = b64decode(encoded)
+    print("📦 Decoded string:", decoded)
+
+    local parts = string.split(decoded, "|")
+    if #parts ~= 3 then return false, "❌ Invalid format" end
+
+    local expiry = tonumber(parts[1])
+    local nonce = parts[2]
+    local hash = parts[3]
+
+    print("🧩 Parsed parts:")
+    print("  Expiry:", expiry)
+    print("  Nonce:", nonce)
+    print("  Hash:", hash)
+
+    if not expiry or not nonce or not hash then return false, "❌ Malformed key" end
+    if expiry < os.time() then return false, "❌ Key expired" end
+
+    local raw = expiry .. "|" .. nonce
+    print("🔗 Raw string:", raw)
+
+    local expected = toHex(sha256_hmac(raw, salt))
+    print("🔐 Expected hash:", expected)
+    print("🔐 Actual hash:  ", hash)
+
+    if expected == hash then
+        return true, string.format("✅ Valid key\n🕒 Expiry: %s\n⏳ Remaining: %ds\n🔁 Nonce: %s",
+            os.date("%Y-%m-%d %H:%M:%S", expiry),
+            expiry - os.time(),
+            nonce
+        )
+    else
+        return false, "❌ Tampered or invalid key"
+    end
+end
+
+-- Button click
+validateButton.MouseButton1Click:Connect(function()
+    local input = inputBox.Text:match("^%s*(.-)%s*$")
+    local ok, msg = validate(input)
+    outputLabel.Text = msg
+end)
+
+-- Close button
+closeButton.MouseButton1Click:Connect(function()
+    gui:Destroy()
+end)
