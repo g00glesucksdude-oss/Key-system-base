@@ -6,20 +6,30 @@ local frame = Instance.new("Frame")
 local input = Instance.new("TextBox")
 local button = Instance.new("TextButton")
 local output = Instance.new("TextLabel")
+local closeButton = Instance.new("TextButton")
 
-frame.Size = UDim2.new(0, 300, 0, 200)
-frame.Position = UDim2.new(0.5, -150, 0.5, -100)
+frame.Size = UDim2.new(0, 300, 0, 250)
+frame.Position = UDim2.new(0.5, -150, 0.5, -125)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderSizePixel = 2
+frame.BorderColor3 = Color3.fromRGB(50, 50, 50)
+frame.Draggable = true
 frame.Parent = gui
 
 input.Size = UDim2.new(1, -20, 0, 30)
 input.Position = UDim2.new(0, 10, 0, 10)
 input.PlaceholderText = "Enter your key"
+input.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+input.TextColor3 = Color3.new(1, 1, 1)
+input.BorderSizePixel = 1
 input.Parent = frame
 
 button.Size = UDim2.new(1, -20, 0, 30)
 button.Position = UDim2.new(0, 10, 0, 50)
 button.Text = "Validate"
+button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+button.TextColor3 = Color3.new(1, 1, 1)
+button.BorderSizePixel = 1
 button.Parent = frame
 
 output.Size = UDim2.new(1, -20, 0, 100)
@@ -27,7 +37,16 @@ output.Position = UDim2.new(0, 10, 0, 90)
 output.Text = ""
 output.BackgroundTransparency = 1
 output.TextColor3 = Color3.new(1, 1, 1)
+output.FontSize = Enum.FontSize.Size14
 output.Parent = frame
+
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -35, 0, 5)
+closeButton.Text = "X"
+closeButton.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+closeButton.BorderSizePixel = 1
+closeButton.Parent = frame
 
 gui.Parent = game.CoreGui
 
@@ -62,4 +81,9 @@ end
 button.MouseButton1Click:Connect(function()
     local key = input.Text
     validateKey(key)
+end)
+
+-- Close button click event
+closeButton.MouseButton1Click:Connect(function()
+    gui:Destroy()
 end)
