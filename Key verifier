@@ -1,92 +1,127 @@
-local salt = "monkey" -- assign salt value
+-- 🔐 CONFIG
+local SALT = "monkey"
 
--- Base64 decoding function
+-- 🔓 Base64 decoder with safe lookup
 local function b64decode(data)
-    local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    local b64lookup = {}
+    local b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local lookup = {}
     for i = 1, #b64chars do
-        b64lookup[b64chars:sub(i, i)] = i - 1
+        lookup[b64chars:sub(i, i)] = i - 1
     end
 
     data = data:gsub("=", "")
     local bytes = {}
-    for i = 1, #data, 4 do
-        local byte1 = b64lookup[data:sub(i, i)] * 4 + math.floor(b64lookup[data:sub(i + 1, i + 1)] / 16)
-        local byte2 = (b64lookup[data:sub(i + 1, i + 1)] % 16) * 16 + math.floor(b64lookup[data:sub(i + 2, i + 2)] / 4)
-        local byte3 = (b64lookup[data:sub(i + 2, i + 2)] % 4) * 64 + b64lookup[data:sub(i + 3, i + 3)]
 
-        table.insert(bytes, string.char(byte1))
-        if data:sub(i + 2, i + 2) ~= "=" then
-            table.insert(bytes, string.char(byte2))
-        end
-        if data:sub(i + 3, i + 3) ~= "=" then
-            table.insert(bytes, string.char(byte3))
-        end
+    for i = 1, #data, 4 do
+        local c1 = lookup[data:sub(i, i)] or 0
+        local c2 = lookup[data:sub(i + 1, i + 1)] or 0
+        local c3 = lookup[data:sub(i + 2, i + 2)] or 0
+        local c4 = lookup[data:sub(i + 3, i + 3)] or 0
+
+        local b1 = c1 * 4 + math.floor(c2 / 16)
+        local b2 = (c2 % 16) * 16 + math.floor(c3 / 4)
+        local b3 = (c3 % 4) * 64 + c4
+
+        table.insert(bytes, string.char(b1))
+        if data:sub(i + 2, i + 2) ~= "" then table.insert(bytes, string.char(b2)) end
+        if data:sub(i + 3, i + 3) ~= "" then table.insert(bytes, string.char(b3)) end
     end
 
     return table.concat(bytes)
 end
 
--- Function to validate key
-local function validateKey(key)
-    local decodedKey = b64decode(key)
-    local saltedDecodedKey = decodedKey:sub(1, -#salt - 1)
-    local extractedSalt = decodedKey:sub(-#salt)
-
-    if extractedSalt == salt then
-        -- Extract important data from decoded key
-        local expiry = tonumber(saltedDecodedKey:match("(%d+)"))
-        local currentTime = os.time()
-        local timeRemaining = expiry - currentTime
-        local changingNumber = math.floor(currentTime / 60)
-
-        output.Text = "Decrypted salt value: " .. extractedSalt .. "\n"
-        output.Text = output.Text .. "Expiration time: " .. os.date("%Y-%m-%d %H:%M:%S", expiry) .. "\n"
-        output.Text = output.Text .. "Time remaining: " .. timeRemaining .. " seconds\n"
-        output.Text = output.Text .. "Changing number: " .. changingNumber
-    else
-        output.Text = "Invalid salt"
+-- 🧪 Key validation logic
+local function validateKey(key, outputLabel)
+    local decoded = b64decode(key)
+    if not decoded or #decoded < #SALT then
+        outputLabel.Text = "❌ Invalid key format"
+        return
     end
+
+    local extractedSalt = decoded:sub(-#SALT)
+    local payload = decoded:sub(1, #decoded - #SALT)
+
+    if extractedSalt ~= SALT then
+        outputLabel.Text = "❌ Salt mismatch"
+        return
+    end
+
+    local expiry = tonumber(payload:match("(%d+)"))
+    if not expiry then
+        outputLabel.Text = "❌ Expiry timestamp missing"
+        return
+    end
+
+    local now = os.time()
+    local remaining = expiry - now
+    local changingNumber = math.floor(now / 60)
+
+    outputLabel.Text = string.format(
+        "✅ Salt: %s\n🕒 Expiry: %s\n⏳ Remaining: %d seconds\n🔁 Changing #: %d",
+        extractedSalt,
+        os.date("%Y-%m-%d %H:%M:%S", expiry),
+        remaining,
+        changingNumber
+    )
 end
 
--- Create GUI
+-- 🖼️ GUI Setup
 local gui = Instance.new("ScreenGui")
 local frame = Instance.new("Frame")
 local input = Instance.new("TextBox")
 local button = Instance.new("TextButton")
 local output = Instance.new("TextLabel")
-local closeButton = Instance.new("TextButton")
+local close = Instance.new("TextButton")
 
-frame.Size = UDim2.new(0, 300, 0, 250)
-frame.Position = UDim2.new(0.5, -150, 0.5, -125)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.Size = UDim2.new(0, 320, 0, 260)
+frame.Position = UDim2.new(0.5, -160, 0.5, -130)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 frame.BorderSizePixel = 2
-frame.BorderColor3 = Color3.fromRGB(50, 50, 50)
+frame.BorderColor3 = Color3.fromRGB(60, 60, 60)
 frame.Draggable = true
 frame.Parent = gui
 
 input.Size = UDim2.new(1, -20, 0, 30)
 input.Position = UDim2.new(0, 10, 0, 10)
-input.PlaceholderText = "Enter your key"
-input.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+input.PlaceholderText = "🔑 Enter your key"
+input.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 input.TextColor3 = Color3.new(1, 1, 1)
 input.BorderSizePixel = 1
 input.Parent = frame
 
 button.Size = UDim2.new(1, -20, 0, 30)
 button.Position = UDim2.new(0, 10, 0, 50)
-button.Text = "Validate"
+button.Text = "✅ Validate"
 button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
 button.TextColor3 = Color3.new(1, 1, 1)
 button.BorderSizePixel = 1
 button.Parent = frame
 
-output.Size = UDim2.new(1, -20, 0, 100)
+output.Size = UDim2.new(1, -20, 0, 120)
 output.Position = UDim2.new(0, 10, 0, 90)
 output.Text = ""
 output.BackgroundTransparency = 1
 output.TextColor3 = Color3.new(1, 1, 1)
+output.TextWrapped = true
+output.TextYAlignment = Enum.TextYAlignment.Top
 output.FontSize = Enum.FontSize.Size14
 output.Parent = frame
 
-closeButton.Size = UDim2.new(0, 30, 0
+close.Size = UDim2.new(0, 30, 0, 30)
+close.Position = UDim2.new(1, -35, 0, 5)
+close.Text = "✖"
+close.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
+close.TextColor3 = Color3.new(1, 1, 1)
+close.BorderSizePixel = 1
+close.Parent = frame
+
+gui.Parent = game:GetService("CoreGui")
+
+-- 🎯 Events
+button.MouseButton1Click:Connect(function()
+    validateKey(input.Text, output)
+end)
+
+close.MouseButton1Click:Connect(function()
+    gui:Destroy()
+end)
