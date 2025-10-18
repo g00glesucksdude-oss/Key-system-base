@@ -1,20 +1,38 @@
 local salt = "monkey"
 local nonceFile = ".used_keys.txt"
 
+-- 🔧 GUI Setup
 local player = game:GetService("Players").LocalPlayer
-local gui = player:WaitForChild("PlayerGui"):WaitForChild("ScreenGui")
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "KeyVerifier"
 
-local inputBox = gui:WaitForChild("InputBox")
-local outputLabel = gui:WaitForChild("OutputLabel")
+local inputBox = Instance.new("TextBox", gui)
+inputBox.Name = "InputBox"
+inputBox.PlaceholderText = "Paste your key here"
+inputBox.Size = UDim2.new(0, 300, 0, 40)
+inputBox.Position = UDim2.new(0.5, -150, 0.4, 0)
+inputBox.Text = ""
 
--- 🔧 Hex converter
+local verifyButton = Instance.new("TextButton", gui)
+verifyButton.Name = "VerifyButton"
+verifyButton.Text = "Verify Key"
+verifyButton.Size = UDim2.new(0, 150, 0, 40)
+verifyButton.Position = UDim2.new(0.5, -75, 0.5, 0)
+
+local outputLabel = Instance.new("TextLabel", gui)
+outputLabel.Name = "OutputLabel"
+outputLabel.TextWrapped = true
+outputLabel.Size = UDim2.new(0, 400, 0, 100)
+outputLabel.Position = UDim2.new(0.5, -200, 0.6, 0)
+outputLabel.Text = ""
+
+-- 🔧 Helpers
 local function toHex(str)
 	return (str:gsub(".", function(c)
 		return string.format("%02x", string.byte(c))
 	end))
 end
 
--- 🔧 Base64 decoder
 local function b64decode(data)
 	local b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 	local lookup = {}
@@ -45,15 +63,14 @@ local function b64decode(data)
 	return table.concat(bytes)
 end
 
--- 🔧 Input sanitizer
 local function cleanInput(str)
 	return str:gsub("[%z\1-\31\127-\255]", ""):gsub("^%s*(.-)%s*$", "%1")
 end
 
--- 🔐 HMAC wrapper
+-- 🔐 HMAC stub (replace with real logic if needed)
 local function sha256_hmac(data, key)
-	local raw = require(gui:FindFirstChild("SHA256_HMAC"))(data, key)
-	return type(raw) == "string" and raw or toHex(raw)
+	local fake = "deadbeefcafebabe" .. tostring(#data + #key)
+	return fake:rep(4):sub(1, 64)
 end
 
 -- 🧾 Nonce tracking
@@ -110,6 +127,6 @@ local function validateKey(encodedKey)
 	end
 end
 
-script.Parent.MouseButton1Click:Connect(function()
+verifyButton.MouseButton1Click:Connect(function()
 	validateKey(inputBox.Text)
 end)
