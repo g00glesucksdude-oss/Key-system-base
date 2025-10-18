@@ -39,6 +39,11 @@ local function b64decode(data)
 	return table.concat(bytes)
 end
 
+-- 🔧 Input sanitizer
+local function cleanInput(str)
+	return str:gsub("[%z\1-\31\127-\255]", ""):gsub("^%s*(.-)%s*$", "%1")
+end
+
 -- 🔐 HMAC wrapper
 local function sha256_hmac(data, key)
 	local raw = require(game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("SHA256_HMAC"))(data, key)
@@ -53,13 +58,13 @@ local function hasUsedNonce(nonce)
 end
 
 local function markNonceUsed(nonce)
-	local existing = isfile(nonceFile) and readfile(nonceFile) or ""
 	appendfile(nonceFile, nonce .. "\n")
 end
 
 -- ✅ Key validator
 local function validateKey(encodedKey)
-	local decoded = b64decode(encodedKey)
+	local key = cleanInput(encodedKey)
+	local decoded = b64decode(key)
 	local parts = string.split(decoded, "|")
 	if #parts ~= 3 then
 		warn("❌ Invalid key format")
@@ -98,3 +103,11 @@ local function validateKey(encodedKey)
 		warn("❌ Tampered or invalid key")
 	end
 end
+
+-- 🔁 Trigger (executor-safe)
+local inputBox = game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("InputBox")
+local verifyButton = game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("VerifyButton")
+
+verifyButton.MouseButton1Click:Connect(function()
+	validateKey(inputBox.Text)
+end)
