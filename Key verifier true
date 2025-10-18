@@ -1,7 +1,7 @@
 local salt = "monkey"
 local trackUsedKeys = true
 local enforceExpiry = true
-local runLoadstring = true
+local runLoadstring = false
 local blockPayloadOnExpiry = true
 local storedkeys = "used_keys"
 local usedKeyFile = "." .. storedkeys .. ".txt"
