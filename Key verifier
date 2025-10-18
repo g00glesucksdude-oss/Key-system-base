@@ -1,14 +1,11 @@
 -- 🔐 CONFIG
 local SALT = "monkey"
 
--- 🔓 Base64 decoder with safe lookup
+-- 🔓 Base64 decoder (safe, compact)
 local function b64decode(data)
-    local b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     local lookup = {}
-    for i = 1, #b64chars do
-        lookup[b64chars:sub(i, i)] = i - 1
-    end
-
+    for i = 1, #chars do lookup[chars:sub(i, i)] = i - 1 end
     data = data:gsub("=", "")
     local bytes = {}
 
@@ -119,7 +116,13 @@ gui.Parent = game:GetService("CoreGui")
 
 -- 🎯 Events
 button.MouseButton1Click:Connect(function()
-    validateKey(input.Text, output)
+    local success, err = pcall(function()
+        validateKey(input.Text, output)
+    end)
+    if not success then
+        output.Text = "💥 Internal error:\n" .. tostring(err)
+        warn("Validation crash:", err)
+    end
 end)
 
 close.MouseButton1Click:Connect(function()
