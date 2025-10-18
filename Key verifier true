@@ -1,19 +1,21 @@
+-- ⚙️ Config
 local salt = "monkey"
 local trackUsedKeys = true
 local enforceExpiry = true
-local runLoadstring = false
+local runLoadstring = true
 local blockPayloadOnExpiry = true
 local storedkeys = "used_keys"
 local usedKeyFile = "." .. storedkeys .. ".txt"
 
--- 🌐 Shared environment table
+-- 🌐 Shared environment
 local sharedEnv = {}
 setfenv(1, setmetatable(sharedEnv, { __index = getfenv(0) }))
 
--- 🔧 GUI Setup
+-- 🖥️ GUI Setup
 local player = game:GetService("Players").LocalPlayer
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 gui.Name = "KeyVerifier"
+gui.ResetOnSpawn = false
 
 local inputBox = Instance.new("TextBox", gui)
 inputBox.Name = "InputBox"
@@ -21,18 +23,30 @@ inputBox.PlaceholderText = "Paste your key here"
 inputBox.Size = UDim2.new(0, 300, 0, 40)
 inputBox.Position = UDim2.new(0.5, -150, 0.4, 0)
 inputBox.Text = ""
+inputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+inputBox.Font = Enum.Font.Code
+inputBox.TextSize = 18
 
 local verifyButton = Instance.new("TextButton", gui)
 verifyButton.Name = "VerifyButton"
 verifyButton.Text = "Verify Key"
 verifyButton.Size = UDim2.new(0, 150, 0, 40)
 verifyButton.Position = UDim2.new(0.5, -75, 0.5, 0)
+verifyButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+verifyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+verifyButton.Font = Enum.Font.Code
+verifyButton.TextSize = 18
 
 local outputLabel = Instance.new("TextLabel", gui)
 outputLabel.Name = "OutputLabel"
 outputLabel.TextWrapped = true
 outputLabel.Size = UDim2.new(0, 400, 0, 100)
 outputLabel.Position = UDim2.new(0.5, -200, 0.6, 0)
+outputLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+outputLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+outputLabel.Font = Enum.Font.Code
+outputLabel.TextSize = 16
 outputLabel.Text = ""
 
 -- 🔧 Helpers
@@ -103,6 +117,7 @@ local function validateKey(encodedKey)
     local parts = string.split(decoded, "|")
     if #parts ~= 3 then
         outputLabel.Text = "❌ Invalid key format"
+        print(outputLabel.Text)
         return
     end
 
@@ -112,11 +127,13 @@ local function validateKey(encodedKey)
 
     if not expiry or not nonce or not hash then
         outputLabel.Text = "❌ Malformed key"
+        print(outputLabel.Text)
         return
     end
 
     if hasUsedKey(encodedKey) then
         outputLabel.Text = "❌ Rejected: key already used"
+        print(outputLabel.Text)
         return
     end
 
@@ -127,6 +144,7 @@ local function validateKey(encodedKey)
         local remaining = expiry - os.time()
         if enforceExpiry and remaining < 0 then
             outputLabel.Text = "❌ Key expired"
+            print(outputLabel.Text)
             return
         end
 
@@ -139,6 +157,7 @@ local function validateKey(encodedKey)
             remaining,
             nonce
         )
+        print(outputLabel.Text)
 
         sharedEnv.shutdownflag = false
 
@@ -164,6 +183,7 @@ local function validateKey(encodedKey)
         end
     else
         outputLabel.Text = "❌ Tampered or invalid key"
+        print(outputLabel.Text)
     end
 end
 
