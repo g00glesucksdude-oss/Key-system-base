@@ -1,17 +1,22 @@
 import base64
 import time
+import random
 
 # 🔐 CONFIG
 SALT = "monkey"
-EXPIRY_SECONDS = 3600  # 1 hour from now
 
-def generate_key():
-    expiry = int(time.time()) + EXPIRY_SECONDS
-    payload = f"{expiry}{SALT}"
+def generate_key(expiry_seconds):
+    expiry = int(time.time()) + expiry_seconds
+    nonce = str(int(time.time() * 1000))[-6:]  # last 6 digits of ms timestamp
+    payload = f"{expiry}{SALT}{nonce}"
     encoded = base64.b64encode(payload.encode()).decode()
     return encoded
 
-# 🧪 Example usage
 if __name__ == "__main__":
-    key = generate_key()
-    print("Generated Key:", key)
+    try:
+        user_input = input("⏳ Enter how many seconds until the key expires: ")
+        expiry_seconds = int(user_input)
+        key = generate_key(expiry_seconds)
+        print("\n🔑 Unique Key:\n" + key)
+    except ValueError:
+        print("❌ Invalid input. Please enter a number.")
