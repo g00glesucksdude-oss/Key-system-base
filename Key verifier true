@@ -97,22 +97,50 @@ end
 -- ✅ Key validator
 local function validate(encoded)
     local decoded = b64decode(encoded)
+    print("🔍 Decoded key:", decoded)
+
     local parts = string.split(decoded, "|")
-    if #parts ~= 3 then return false, "❌ Invalid format" end
+    if #parts ~= 3 then
+        print("❌ Debug: Invalid format — expected 3 parts, got", #parts)
+        return false, "❌ Invalid format"
+    end
 
     local expiry = tonumber(parts[1])
     local nonce = parts[2]
     local hash = parts[3]
 
-    if not expiry or not nonce or not hash then return false, "❌ Malformed key" end
-    if enforceExpiry and expiry < os.time() then return false, "❌ Key expired" end
-    if hasUsedKey(encoded) then return false, "❌ Rejected: key already used" end
+    print("🧩 Parsed parts:")
+    print("  Expiry:", expiry)
+    print("  Nonce:", nonce)
+    print("  Hash:", hash)
+
+    if not expiry or not nonce or not hash then
+        print("❌ Debug: Malformed key — missing expiry, nonce, or hash")
+        return false, "❌ Malformed key"
+    end
+
+    if enforceExpiry and expiry < os.time() then
+        print("⏳ Debug: Key expired — current:", os.time(), "expiry:", expiry)
+        return false, "❌ Key expired"
+    end
+
+    if hasUsedKey(encoded) then
+        print("🔁 Debug: Key already used — rejecting")
+        return false, "❌ Rejected: key already used"
+    end
 
     local raw = expiry .. "|" .. nonce
     local expected = toHex(sha256_hmac(raw, salt))
 
+    print("🔐 Debug: HMAC check")
+    print("  Raw string:", raw)
+    print("  Expected hash:", expected)
+    print("  Provided hash:", hash)
+
     if expected == hash then
+        print("✅ Debug: Hash match — key is valid")
         markKeyUsed(encoded)
+
         local remaining = expiry - os.time()
         local status = remaining > 0 and "✅ Valid key" or "⚠️ Expired but untampered"
         local msg = string.format("%s\n🕒 Expiry: %s\n⏳ Remaining: %ds\n🔁 Nonce: %s",
@@ -125,41 +153,12 @@ local function validate(encoded)
         sharedEnv.shutdownflag = false
 
         if runLoadstring and (not blockPayloadOnExpiry or remaining > 0) then
-            loadstring([[
-                local heartbeat = game:GetService("RunService").Heartbeat
-                local payloadPart = Instance.new("Part", workspace)
-                payloadPart.Name = "PayloadPart"
-                payloadPart.Anchored = true
-                payloadPart.Size = Vector3.new(5, 1, 5)
-                payloadPart.Position = Vector3.new(0, 5, 0)
-                payloadPart.BrickColor = BrickColor.new("Bright green")
-
-                local conn
-                conn = heartbeat:Connect(function()
-                    if getfenv(1).shutdownflag then
-                        payloadPart:Destroy()
-                        conn:Disconnect()
-                        print("💥 Payload self-destructed via shutdownflag.")
-                    end
-                end)
-            ]])()
+            loadstring([[ -- payload block here ]])()
         end
 
         return true, msg
     else
+        print("❌ Debug: Hash mismatch — key is tampered or invalid")
         return false, "❌ Tampered or invalid key"
     end
 end
-
--- 🔘 Button click
-validateButton.MouseButton1Click:Connect(function()
-    local input = inputBox.Text:gsub("[%z\1-\31]", ""):gsub("%s+$", "")
-    local ok, msg = validate(input)
-    outputLabel.Text = msg
-    print(msg)
-end)
-
--- ❌ Close button
-closeButton.MouseButton1Click:Connect(function()
-    gui:Destroy()
-end)
