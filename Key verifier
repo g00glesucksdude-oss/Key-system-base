@@ -1,13 +1,14 @@
 local salt = "monkey"
+local nonceFile = ".used_keys.txt"
 
--- 🔧 Hex converter (if module returns raw bytes)
+-- 🔧 Hex converter
 local function toHex(str)
 	return (str:gsub(".", function(c)
 		return string.format("%02x", string.byte(c))
 	end))
 end
 
--- 🔧 Base64 decoder (safe and padded)
+-- 🔧 Base64 decoder
 local function b64decode(data)
 	local b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 	local lookup = {}
@@ -38,21 +39,27 @@ local function b64decode(data)
 	return table.concat(bytes)
 end
 
--- 🔧 Input sanitizer
-local function cleanInput(str)
-	return str:gsub("[%z\1-\31\127-\255]", ""):gsub("^%s*(.-)%s*$", "%1")
-end
-
 -- 🔐 HMAC wrapper
 local function sha256_hmac(data, key)
 	local raw = require(game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("SHA256_HMAC"))(data, key)
 	return type(raw) == "string" and raw or toHex(raw)
 end
 
+-- 🧾 Nonce tracking
+local function hasUsedNonce(nonce)
+	if not isfile(nonceFile) then return false end
+	local content = readfile(nonceFile)
+	return content:find(nonce, 1, true) ~= nil
+end
+
+local function markNonceUsed(nonce)
+	local existing = isfile(nonceFile) and readfile(nonceFile) or ""
+	appendfile(nonceFile, nonce .. "\n")
+end
+
 -- ✅ Key validator
 local function validateKey(encodedKey)
-	local key = cleanInput(encodedKey)
-	local decoded = b64decode(key)
+	local decoded = b64decode(encodedKey)
 	local parts = string.split(decoded, "|")
 	if #parts ~= 3 then
 		warn("❌ Invalid key format")
@@ -68,10 +75,16 @@ local function validateKey(encodedKey)
 		return
 	end
 
+	if hasUsedNonce(nonce) then
+		warn("❌ Rejected: key already used")
+		return
+	end
+
 	local raw = expiry .. "|" .. nonce
 	local expected = sha256_hmac(raw, salt)
 
 	if expected == hash then
+		markNonceUsed(nonce)
 		local remaining = expiry - os.time()
 		local status = remaining > 0 and "✅ Valid key" or "⚠️ Expired but untampered"
 		print(string.format(
@@ -85,11 +98,3 @@ local function validateKey(encodedKey)
 		warn("❌ Tampered or invalid key")
 	end
 end
-
--- 🔁 Trigger (executor-safe)
-local inputBox = game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("InputBox")
-local verifyButton = game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("VerifyButton")
-
-verifyButton.MouseButton1Click:Connect(function()
-	validateKey(inputBox.Text)
-end)
