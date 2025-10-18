@@ -1,6 +1,12 @@
 local salt = "monkey"
 local nonceFile = ".used_keys.txt"
 
+local player = game:GetService("Players").LocalPlayer
+local gui = player:WaitForChild("PlayerGui"):WaitForChild("ScreenGui")
+
+local inputBox = gui:WaitForChild("InputBox")
+local outputLabel = gui:WaitForChild("OutputLabel")
+
 -- 🔧 Hex converter
 local function toHex(str)
 	return (str:gsub(".", function(c)
@@ -46,7 +52,7 @@ end
 
 -- 🔐 HMAC wrapper
 local function sha256_hmac(data, key)
-	local raw = require(game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("SHA256_HMAC"))(data, key)
+	local raw = require(gui:FindFirstChild("SHA256_HMAC"))(data, key)
 	return type(raw) == "string" and raw or toHex(raw)
 end
 
@@ -67,7 +73,7 @@ local function validateKey(encodedKey)
 	local decoded = b64decode(key)
 	local parts = string.split(decoded, "|")
 	if #parts ~= 3 then
-		warn("❌ Invalid key format")
+		outputLabel.Text = "❌ Invalid key format"
 		return
 	end
 
@@ -76,12 +82,12 @@ local function validateKey(encodedKey)
 	local hash = parts[3]
 
 	if not expiry or not nonce or not hash then
-		warn("❌ Malformed key")
+		outputLabel.Text = "❌ Malformed key"
 		return
 	end
 
 	if hasUsedNonce(nonce) then
-		warn("❌ Rejected: key already used")
+		outputLabel.Text = "❌ Rejected: key already used"
 		return
 	end
 
@@ -92,22 +98,18 @@ local function validateKey(encodedKey)
 		markNonceUsed(nonce)
 		local remaining = expiry - os.time()
 		local status = remaining > 0 and "✅ Valid key" or "⚠️ Expired but untampered"
-		print(string.format(
+		outputLabel.Text = string.format(
 			"%s\n🕒 Expiry: %s\n⏳ Remaining: %d seconds\n🔁 Nonce: %s",
 			status,
 			os.date("%Y-%m-%d %H:%M:%S", expiry),
 			remaining,
 			nonce
-		))
+		)
 	else
-		warn("❌ Tampered or invalid key")
+		outputLabel.Text = "❌ Tampered or invalid key"
 	end
 end
 
--- 🔁 Trigger (executor-safe)
-local inputBox = game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("InputBox")
-local verifyButton = game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui:FindFirstChild("VerifyButton")
-
-verifyButton.MouseButton1Click:Connect(function()
+script.Parent.MouseButton1Click:Connect(function()
 	validateKey(inputBox.Text)
 end)
