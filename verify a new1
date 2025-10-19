@@ -1,0 +1,204 @@
+-- CONFIG
+local SECRET_SALT = "sandbox_salt_ggl"
+local CAESAR_SHIFT = 7
+local USED_KEYS_FILE = "DATABASESERVERORSMTCOOL"
+
+-- SHA-256 module
+local sha256 = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256"))()
+
+-- Caesar unshift (preserve separators)
+local function caesar_unshift(text, shift)
+    local out = {}
+    for i = 1, #text do
+        local c = text:sub(i, i)
+        if c == "|" or c == "-" then
+            out[#out+1] = c
+        elseif c:match("%a") then
+            local base = c:match("%u") and 65 or 97
+            local byte = string.byte(c)
+            out[#out+1] = string.char((byte - base - shift) % 26 + base)
+        elseif c:match("%d") then
+            out[#out+1] = tostring((tonumber(c) - shift) % 10)
+        else
+            out[#out+1] = c
+        end
+    end
+    return table.concat(out)
+end
+
+-- Base64 decoder (bit32-safe)
+local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+local b64lookup = {}
+for i = 1, #b64chars do b64lookup[b64chars:sub(i,i)] = i-1 end
+
+local function base64_decode(data)
+    data = data:gsub('[^'..b64chars..'=]', '')
+    local result = {}
+    for i = 1, #data, 4 do
+        local c1 = b64lookup[data:sub(i, i)] or 0
+        local c2 = b64lookup[data:sub(i+1, i+1)] or 0
+        local c3 = b64lookup[data:sub(i+2, i+2)] or 0
+        local c4 = b64lookup[data:sub(i+3, i+3)] or 0
+
+        local bits = bit32.bor(
+            bit32.lshift(c1, 18),
+            bit32.lshift(c2, 12),
+            bit32.lshift(c3, 6),
+            c4
+        )
+        local b1 = bit32.band(bit32.rshift(bits, 16), 0xFF)
+        local b2 = bit32.band(bit32.rshift(bits, 8), 0xFF)
+        local b3 = bit32.band(bits, 0xFF)
+
+        result[#result+1] = string.char(b1)
+        if data:sub(i+2, i+2) ~= '=' then result[#result+1] = string.char(b2) end
+        if data:sub(i+3, i+3) ~= '=' then result[#result+1] = string.char(b3) end
+    end
+    return table.concat(result)
+end
+
+-- Replay protection
+local function load_used_keys()
+    local used = {}
+    if isfile and isfile(USED_KEYS_FILE) then
+        for line in io.lines(USED_KEYS_FILE) do
+            used[line] = true
+        end
+    end
+    return used
+end
+
+local function mark_used(id)
+    if appendfile then
+        appendfile(USED_KEYS_FILE, id .. "\n")
+    end
+end
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "KeyValidator"
+gui.ResetOnSpawn = false
+gui.Parent = game:GetService("CoreGui")
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 360, 0, 270)
+frame.Position = UDim2.new(0.5, -180, 0.5, -135)
+frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+
+local input = Instance.new("TextBox", frame)
+input.Size = UDim2.new(1, -20, 0, 32)
+input.Position = UDim2.new(0, 10, 0, 10)
+input.PlaceholderText = "Paste Base64 key"
+input.TextColor3 = Color3.new(1,1,1)
+input.BackgroundColor3 = Color3.fromRGB(50,50,50)
+
+local button = Instance.new("TextButton", frame)
+button.Size = UDim2.new(0.5, -15, 0, 32)
+button.Position = UDim2.new(0, 10, 0, 50)
+button.Text = "Validate"
+button.TextColor3 = Color3.new(1,1,1)
+button.BackgroundColor3 = Color3.fromRGB(70,70,70)
+
+local copyBtn = Instance.new("TextButton", frame)
+copyBtn.Size = UDim2.new(0.5, -15, 0, 32)
+copyBtn.Position = UDim2.new(0.5, 5, 0, 50)
+copyBtn.Text = "Copy Debug"
+copyBtn.TextColor3 = Color3.new(1,1,1)
+copyBtn.BackgroundColor3 = Color3.fromRGB(40,100,40)
+
+local debug = Instance.new("TextLabel", frame)
+debug.Size = UDim2.new(1, -20, 0, 140)
+debug.Position = UDim2.new(0, 10, 0, 90)
+debug.Text = ""
+debug.TextColor3 = Color3.new(1,1,1)
+debug.BackgroundTransparency = 1
+debug.TextWrapped = true
+debug.TextXAlignment = Enum.TextXAlignment.Left
+
+local close = Instance.new("TextButton", frame)
+close.Size = UDim2.new(0, 60, 0, 24)
+close.Position = UDim2.new(1, -70, 0, 10)
+close.Text = "Close"
+close.TextColor3 = Color3.new(1,1,1)
+close.BackgroundColor3 = Color3.fromRGB(100,0,0)
+close.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+-- Copy debug to clipboard (executor-dependent)
+copyBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(debug.Text or "")
+        debug.Text = (debug.Text or "") .. "\n[Copied to clipboard]"
+    else
+        debug.Text = (debug.Text or "") .. "\n[Clipboard not supported]"
+    end
+end)
+
+-- Validation
+button.MouseButton1Click:Connect(function()
+    local encoded = input.Text:gsub("%s+", "")
+    if encoded == "" then
+        debug.Text = "Enter a key."
+        return
+    end
+
+    debug.Text = "Step 1: Base64 decode..."
+    local ok, decoded = pcall(base64_decode, encoded)
+    if not ok then
+        debug.Text = "Base64 decode failed: " .. tostring(decoded)
+        return
+    end
+    debug.Text = debug.Text .. "\nDecoded: " .. decoded
+
+    debug.Text = debug.Text .. "\nStep 2: Caesar unshift..."
+    local unshifted = caesar_unshift(decoded, CAESAR_SHIFT)
+    debug.Text = debug.Text .. "\nUnshifted: " .. unshifted
+
+    debug.Text = debug.Text .. "\nStep 3: Split parts..."
+    local parts = {}
+    for part in string.gmatch(unshifted, "[^|]+") do
+        parts[#parts+1] = part
+    end
+    for i,v in ipairs(parts) do
+        debug.Text = debug.Text .. ("\nPart[%d]: %s"):format(i,v)
+    end
+
+    if #parts ~= 5 or parts[1] ~= "GGL-sandbox" then
+        debug.Text = debug.Text .. "\nFormat invalid."
+        return
+    end
+
+    local expiry, payload, digits, hash = parts[2], parts[3], parts[4], parts[5]
+
+    debug.Text = debug.Text .. "\nStep 4: Hash verify..."
+    local raw_data = expiry .. "|" .. payload .. "|" .. digits
+    local expected = sha256(raw_data .. "|" .. SECRET_SALT)
+    debug.Text = debug.Text .. "\nExpected hash: " .. expected .. "\nProvided hash: " .. hash
+
+    if expected ~= hash then
+        debug.Text = debug.Text .. "\nHash mismatch!"
+        return
+    end
+
+    debug.Text = debug.Text .. "\nStep 5: Expiry check..."
+    local now = os.time()
+    local exp_num = tonumber(expiry)
+    if not exp_num then
+        debug.Text = debug.Text .. "\nExpiry not numeric."
+        return
+    end
+    if exp_num < now then
+        debug.Text = debug.Text .. ("\nExpired. Now=%d, Expiry=%d"):format(now, exp_num)
+        return
+    end
+
+    debug.Text = debug.Text .. "\nStep 6: Replay check..."
+    local used = load_used_keys()
+    local key_id = payload .. "-" .. digits
+    if used[key_id] then
+        debug.Text = debug.Text .. "\nReplay detected for " .. key_id
+        return
+    end
+    mark_used(key_id)
+
+    debug.Text = debug.Text .. ("\n✅ Valid! Expires in %ds"):format(exp_num - now)
+end)
