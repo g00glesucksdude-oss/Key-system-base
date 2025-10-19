@@ -1,15 +1,15 @@
--- ✅ Correct raw GitHub URL
-local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/main/sha256.lua"
+-- ✅ Load SHA-256 module from GitHub (no extension)
+local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/main/sha256"
+local raw = game:HttpGet(url, true)
 
--- 🔐 Load SHA-256 module safely
-local success, sha256 = pcall(function()
-    return loadstring(game:HttpGet(url, true))()
-end)
-
-if not success or type(sha256) ~= "table" or not sha256.hash then
-    warn("❌ Failed to load SHA-256 module")
-    return
+-- 🔍 Sanity check: make sure it's Lua, not HTML
+if raw:find("<html") or raw:find("DOCTYPE") then
+    error("❌ GitHub returned HTML instead of Lua. Check the file path or extension.")
 end
+
+-- 🔐 Load the module
+local sha256 = loadstring(raw)()
+assert(type(sha256) == "table" and sha256.hash, "❌ SHA-256 module failed to load")
 
 -- 🧪 Test input
 local username = "google"
@@ -21,10 +21,11 @@ local key_string = username .. ":" .. salt .. ":" .. tostring(expiry_ts)
 
 -- 🔒 Generate hash
 local hash = sha256.hash(key_string)
+assert(hash and #hash == 64, "❌ Hash failed or malformed")
 
 -- 📤 Output results
 print("🔐 Key String:", key_string)
-print("🔒 SHA-256 Hash:", hash or "❌ Hash failed")
+print("🔒 SHA-256 Hash:", hash)
 
 -- ✅ Validator simulation
 local function validate_key(input)
