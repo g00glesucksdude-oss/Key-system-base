@@ -7,7 +7,7 @@ local storedkeys = "used_keys"
 local usedKeyFile = "." .. storedkeys .. ".txt"
 
 local sharedEnv = {}
-setfenv(1, setmetatable(sharedEnv, { __index = getfenv(0) }))
+sharedEnv.shutdownflag = false
 
 local player = game:GetService("Players").LocalPlayer
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -68,6 +68,12 @@ local function b64decode(data)
 	end))
 end
 
+local function toHex(str)
+	return (str:gsub('.', function(c)
+		return string.format('%02x', string.byte(c))
+	end))
+end
+
 local function hasUsedKey(encodedKey)
 	if not trackUsedKeys then return false end
 	if not isfile(usedKeyFile) then return false end
@@ -81,12 +87,6 @@ local function markKeyUsed(encodedKey)
 	end
 end
 
-local function toHex(str)
-	return (str:gsub('.', function(c)
-		return string.format('%02x', string.byte(c))
-	end))
-end
-
 local function validate(encoded)
 	local decoded = b64decode(encoded)
 	local parts = string.split(decoded, "|")
@@ -94,14 +94,14 @@ local function validate(encoded)
 
 	local expiry = tonumber(parts[1])
 	local nonce = parts[2]
-	local hash = parts[3] -- hex string from Python
+	local hash = parts[3]
 
 	if not expiry or not nonce or not hash then return false, "malformed key" end
 	if enforceExpiry and expiry < os.time() then return false, "expired" end
 	if hasUsedKey(encoded) then return false, "already used" end
 
 	local raw = expiry .. "|" .. nonce
-	local expected = crypto.hmac_sha256(raw, salt) -- raw bytes
+	local expected = crypto.hmac_sha256(raw, salt)
 	local expectedHex = toHex(expected)
 
 	if expectedHex == hash then
@@ -124,7 +124,7 @@ local function validate(encoded)
 		sharedEnv.shutdownflag = false
 
 		if runLoadstring and (not blockPayloadOnExpiry or remaining > 0) then
-			loadstring([[
+			local payload = [[
 				local heartbeat = game:GetService("RunService").Heartbeat
 				local payloadPart = Instance.new("Part", workspace)
 				payloadPart.Name = "PayloadPart"
@@ -141,7 +141,11 @@ local function validate(encoded)
 						print("payload self-destructed")
 					end
 				end)
-			]])()
+			]]
+
+			local f = loadstring(payload)
+			setfenv(f, setmetatable(sharedEnv, { __index = getfenv(0) }))
+			f()
 		end
 
 		return true, msg
