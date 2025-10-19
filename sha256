@@ -1,7 +1,7 @@
--- SHA256.lua
+-- SHA256.lua (patched)
 local sha256 = {}
 
-local bit = bit32
+local bit = bit32 or require("bit")
 local band, bor, bxor, rshift, lshift = bit.band, bit.bor, bit.bxor, bit.rshift, bit.lshift
 
 local function rotr(n, b)
@@ -13,6 +13,9 @@ local function tohex(num)
 end
 
 local function preprocess(msg)
+	assert(type(msg) == "string", "Input must be string")
+	msg = msg:gsub("[%z\1-\31]", "") -- sanitize control chars
+
 	local len = #msg * 8
 	msg = msg .. "\128"
 	while (#msg * 8) % 512 ~= 448 do msg = msg .. "\0" end
@@ -26,7 +29,9 @@ local function chunk(msg, i)
 	local w = {}
 	for j = 0, 15 do
 		local idx = i + j * 4
-		w[j] = (msg:byte(idx) << 24) | (msg:byte(idx + 1) << 16) | (msg:byte(idx + 2) << 8) | msg:byte(idx + 3)
+		local b1, b2, b3, b4 = msg:byte(idx), msg:byte(idx + 1), msg:byte(idx + 2), msg:byte(idx + 3)
+		assert(b1 and b2 and b3 and b4, "Malformed chunk")
+		w[j] = (b1 << 24) | (b2 << 16) | (b3 << 8) | b4
 	end
 	for j = 16, 63 do
 		local s0 = bxor(rotr(w[j-15], 7), rotr(w[j-15], 18), rshift(w[j-15], 3))
@@ -84,7 +89,10 @@ function sha256.hash(msg)
 		h[7] = (h[7] + g) & 0xFFFFFFFF
 		h[8] = (h[8] + h0) & 0xFFFFFFFF
 	end
-	return table.concat({tohex(h[1]),tohex(h[2]),tohex(h[3]),tohex(h[4]),tohex(h[5]),tohex(h[6]),tohex(h[7]),tohex(h[8])})
+	return table.concat({
+		tohex(h[1]), tohex(h[2]), tohex(h[3]), tohex(h[4]),
+		tohex(h[5]), tohex(h[6]), tohex(h[7]), tohex(h[8])
+	})
 end
 
 return sha256
