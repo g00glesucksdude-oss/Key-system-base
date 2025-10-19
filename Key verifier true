@@ -53,6 +53,8 @@ closeButton.TextScaled = true
 closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 closeButton.TextColor3 = Color3.new(1, 1, 1)
 
+local crypto = require(game:GetService("ReplicatedStorage"):WaitForChild("CryptoLib"))
+
 local function b64decode(data)
 	local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 	data = data:gsub('[^'..b..'=]', '')
@@ -64,17 +66,6 @@ local function b64decode(data)
 	end):gsub('%d%d%d%d%d%d%d%d', function(x)
 		return string.char(tonumber(x,2))
 	end))
-end
-
-local function toHex(str)
-	return (str:gsub('.', function(c)
-		return string.format('%02x', string.byte(c))
-	end))
-end
-
-local function sha256_hmac(data, key)
-	local fake = "deadbeefcafebabe" .. tostring(#data + #key)
-	return fake:rep(4):sub(1, 64)
 end
 
 local function hasUsedKey(encodedKey)
@@ -90,47 +81,39 @@ local function markKeyUsed(encodedKey)
 	end
 end
 
+local function toHex(str)
+	return (str:gsub('.', function(c)
+		return string.format('%02x', string.byte(c))
+	end))
+end
+
 local function validate(encoded)
 	local decoded = b64decode(encoded)
-	print("decoded:", decoded)
-
 	local parts = string.split(decoded, "|")
-	if #parts ~= 3 then
-		print("invalid format")
-		return false, "invalid format"
-	end
+	if #parts ~= 3 then return false, "invalid format" end
 
 	local expiry = tonumber(parts[1])
 	local nonce = parts[2]
-	local hash = parts[3]
+	local hash = parts[3] -- hex string from Python
 
-	print("expiry:", expiry)
-	print("nonce:", nonce)
-	print("hash:", hash)
-
-	if not expiry or not nonce or not hash then
-		print("malformed key")
-		return false, "malformed key"
-	end
-
-	if enforceExpiry and expiry < os.time() then
-		print("expired")
-		return false, "expired"
-	end
-
-	if hasUsedKey(encoded) then
-		print("already used")
-		return false, "already used"
-	end
+	if not expiry or not nonce or not hash then return false, "malformed key" end
+	if enforceExpiry and expiry < os.time() then return false, "expired" end
+	if hasUsedKey(encoded) then return false, "already used" end
 
 	local raw = expiry .. "|" .. nonce
-	local expected = toHex(sha256_hmac(raw, salt))
+	local expected = crypto.hmac_sha256(raw, salt) -- raw bytes
+	local expectedHex = toHex(expected)
 
-	print("raw:", raw)
-	print("expected:", expected)
-
-	if expected == hash then
+	if expectedHex == hash then
 		markKeyUsed(encoded)
+
+		spawn(function()
+			local waitTime = expiry - os.time()
+			if waitTime > 0 then wait(waitTime) end
+			sharedEnv.shutdownflag = true
+			print("Key expired — shutdownflag set")
+		end)
+
 		local remaining = expiry - os.time()
 		local msg = string.format("valid\nexpiry: %s\nremaining: %ds\nnonce: %s",
 			os.date("%Y-%m-%d %H:%M:%S", expiry),
@@ -163,20 +146,20 @@ local function validate(encoded)
 
 		return true, msg
 	else
-		print("hash mismatch")
 		return false, "tampered or invalid"
 	end
 end
 
 validateButton.MouseButton1Click:Connect(function()
-	print("validate clicked")
 	local input = inputBox.Text:gsub("[%z\1-\31]", ""):gsub("%s+$", "")
+	if input == "" then
+		outputLabel.Text = "no input"
+		return
+	end
 	local ok, msg = validate(input)
 	outputLabel.Text = msg
-	print(msg)
 end)
 
 closeButton.MouseButton1Click:Connect(function()
-	print("close clicked")
 	gui:Destroy()
 end)
