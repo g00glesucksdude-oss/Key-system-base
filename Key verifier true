@@ -107,6 +107,6 @@ function sha256_prompt(input)
 end
 
 -- Example usage
-local user_input = "your prompt here"
+local user_input = "fuck you"
 local hash = sha256_prompt(user_input)
 print("SHA256:", hash)
