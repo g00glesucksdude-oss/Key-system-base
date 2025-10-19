@@ -1,31 +1,31 @@
--- Load SHA-256 module from GitHub
+-- Load patched SHA-256 module from GitHub
 local sha256 = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/main/sha256.lua"))()
 
--- Config
+-- Test input
 local username = "google"
 local salt = "sandbox_salt"
 local expiry_ts = os.time() + 300 -- valid for 5 minutes
 
--- Generate key string
+-- Build key string
 local key_string = username .. ":" .. salt .. ":" .. tostring(expiry_ts)
 
--- Hash the key using GitHub SHA-256
-local hashed_key = sha256.hash(key_string)
+-- Hash it
+local hash = sha256.hash(key_string)
 
 -- Output
 print("🔐 Key String:", key_string)
-print("🔒 SHA-256 Hash:", hashed_key)
+print("🔒 SHA-256 Hash:", hash or "❌ Hash failed")
 
 -- Validator simulation
 local function validate_key(input)
 	local expected = sha256.hash(input)
-	if expected == hashed_key then
+	if expected == hash then
 		print("✅ Key is valid")
 	else
 		print("❌ Invalid key")
 	end
 end
 
--- Example usage
-validate_key(key_string) -- should pass
-validate_key("wrong:input:123") -- should fail
+-- Run tests
+validate_key(key_string)         -- should pass
+validate_key("wrong:input:123")  -- should fail
