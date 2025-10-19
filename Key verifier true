@@ -1,57 +1,48 @@
-local player = game:GetService("Players").LocalPlayer
-local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-gui.Name = "KeyValidatorGui"
-gui.ResetOnSpawn = false
+-- Load SHA-256 module from GitHub
+local sha256 = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256"))()
 
-local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0.9, 0, 0.4, 0) -- 90% width, 40% height
-frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-frame.AnchorPoint = Vector2.new(0.5, 0.5)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.BorderSizePixel = 0
+-- Config
+local salt = "sneaky_salt"
+local expiry_ts = 1699999999  -- Replace with actual expiry timestamp
+local expected_hash = sha256.hash("banana42:" .. salt .. ":" .. expiry_ts)
+local nonce_file = "nonces.db"
+local expiry_tolerance = 60
 
-local inputBox = Instance.new("TextBox", frame)
-inputBox.Size = UDim2.new(1, -20, 0.2, 0)
-inputBox.Position = UDim2.new(0, 10, 0, 10)
-inputBox.PlaceholderText = "Paste your key here"
-inputBox.TextScaled = true
-inputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-inputBox.TextColor3 = Color3.new(1, 1, 1)
+-- Nonce utilities
+local function load_nonces()
+	local f = io.open(nonce_file, "r")
+	if not f then return {} end
+	local raw = f:read("*a")
+	f:close()
+	local ok, data = pcall(function() return load("return " .. raw)() end)
+	return ok and data or {}
+end
 
-local outputLabel = Instance.new("TextLabel", frame)
-outputLabel.Size = UDim2.new(1, -20, 0.4, 0)
-outputLabel.Position = UDim2.new(0, 10, 0.25, 0)
-outputLabel.Text = "Awaiting input..."
-outputLabel.TextScaled = true
-outputLabel.TextWrapped = true
-outputLabel.BackgroundTransparency = 1
-outputLabel.TextColor3 = Color3.new(1, 1, 1)
+local function save_nonces(tbl)
+	local f = io.open(nonce_file, "w")
+	f:write("return " .. tostring(tbl):gsub("%s+", " "))
+	f:close()
+end
 
-local validateButton = Instance.new("TextButton", frame)
-validateButton.Size = UDim2.new(0.5, -15, 0.15, 0)
-validateButton.Position = UDim2.new(0, 10, 0.7, 0)
-validateButton.Text = "Validate Key"
-validateButton.TextScaled = true
-validateButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-validateButton.TextColor3 = Color3.new(1, 1, 1)
-
-local closeButton = Instance.new("TextButton", frame)
-closeButton.Size = UDim2.new(0.5, -15, 0.15, 0)
-closeButton.Position = UDim2.new(0.5, 5, 0.7, 0)
-closeButton.Text = "Close"
-closeButton.TextScaled = true
-closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-closeButton.TextColor3 = Color3.new(1, 1, 1)
-
-validateButton.MouseButton1Click:Connect(function()
-	local input = inputBox.Text:gsub("[%z\1-\31]", ""):gsub("%s+$", "")
-	if input == "" then
-		outputLabel.Text = "no input"
-	else
-		outputLabel.Text = "You entered:\n" .. input
+-- Validator
+local function validate_key(user_key)
+	local now = os.time()
+	if now > (expiry_ts + expiry_tolerance) then
+		return false, "Key expired"
 	end
-end)
 
-closeButton.MouseButton1Click:Connect(function()
-	gui:Destroy()
-end)
+	local nonces = load_nonces()
+	if nonces[user_key] then
+		return false, "Replay detected"
+	end
+
+	local combo = user_key .. ":" .. salt .. ":" .. tostring(expiry_ts)
+	local hashed = sha256.hash(combo)
+	if hashed ~= expected_hash then
+		return false, "Invalid key"
+	end
+
+	nonces[user_key] = now
+	save_nonces(nonces)
+	return true, "Key valid"
+end
