@@ -1,4 +1,4 @@
--- SHA-256 Module for Roblox Lua (Executor-Safe, Full Version)
+-- SHA-256 Prompt Module (Executor-Safe, Full Version)
 local bit = bit32
 local function rrotate(x, n)
 	return bit.rrotate(x, n)
@@ -84,9 +84,9 @@ local function compress(chunk, H)
 	H[8] = (H[8] + h) % 4294967296
 end
 
-function sha256(msg)
-	assert(type(msg) == "string", "Input must be a string")
-	local bytes = pad(to_bytes(msg))
+function sha256_prompt(input)
+	assert(type(input) == "string", "Input must be a string")
+	local bytes = pad(to_bytes(input))
 	local words = to_words(bytes)
 	local H = {
 		0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
@@ -107,4 +107,6 @@ function sha256(msg)
 end
 
 -- Example usage
-print("SHA256:", sha256("hello world"))
+local user_input = "your prompt here"
+local hash = sha256_prompt(user_input)
+print("SHA256:", hash)
