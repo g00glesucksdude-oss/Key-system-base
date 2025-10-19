@@ -1,22 +1,26 @@
-import time, hmac, hashlib, base64, random
+import time
+import base64
+import hashlib
+import random
+import string
 
-def generate_key(salt="monkey", expiry_offset=3600):
-    expiry = int(time.time()) + expiry_offset
-    nonce = str(random.randint(100000, 999999))
-    raw = f"{expiry}|{nonce}"
-    hash = hmac.new(salt.encode(), raw.encode(), hashlib.sha256).hexdigest()
-    full = f"{expiry}|{nonce}|{hash}"
-    encoded = base64.b64encode(full.encode()).decode()
+def generate_nonce(length=8):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+def generate_key(expiry_seconds, payload="default"):
+    expiry = int(time.time()) + expiry_seconds
+    nonce = generate_nonce()
+    raw = f"{expiry}:{nonce}:{payload}"
+    hash = hashlib.sha256(raw.encode()).hexdigest()
+    key = f"GGL-sandbox-{expiry}-{nonce}-{payload}-{hash}"
+    encoded = base64.b64encode(key.encode()).decode()
     return encoded
 
-# 🧠 Prompt for expiry
+# 🧠 Prompt user for expiry
 try:
-    user_input = input("⏳ How long should the key last (in seconds)? ")
-    offset = int(user_input)
-except:
-    offset = 3600
-    print("⚠️ Invalid input. Defaulting to 1 hour.")
-
-# 🔐 Generate and print key
-print("\n🔑 Your HMAC key:")
-print(generate_key(expiry_offset=offset))
+    seconds = int(input("⏳ How many seconds should the key be valid? "))
+    payload = input("📦 Optional payload (press Enter for default): ") or "default"
+    key = generate_key(seconds, payload)
+    print("\n🔐 Generated Key:\n", key)
+except ValueError:
+    print("⚠️ Invalid input. Please enter a number of seconds.")
