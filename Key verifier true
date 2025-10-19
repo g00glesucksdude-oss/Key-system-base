@@ -1,5 +1,5 @@
 -- ✅ Load SHA-256 module from GitHub (no extension)
-local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/main/sha256"
+local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256" 
 local raw = game:HttpGet(url, true)
 
 -- 🔍 Sanity check: make sure it's Lua, not HTML
