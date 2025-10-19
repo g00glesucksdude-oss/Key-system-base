@@ -2,48 +2,6 @@
 local sha256 = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256"))()
 
 -- Config
-local salt = "sneaky_salt"
-local function parse_key_parts(key)
-	local parts = {}
-	for part in string.gmatch(key, "[^:]+") do
-		table.insert(parts, part)
-	end
-	if #parts ~= 3 then return nil end
-	return {
-		username = parts[1],
-		salt = parts[2],
-		expiry_ts = tonumber(parts[3])
-	}
-end
-
-local function validate_key(user_key)
-	local now = os.time()
-	local parsed = parse_key_parts(user_key)
-	if not parsed then return false, "❌ Invalid key format" end
-
-	local expiry_ts = parsed.expiry_ts
-	local readable_expiry = os.date("%Y-%m-%d %H:%M:%S", expiry_ts)
-
-	if now > (expiry_ts + expiry_tolerance) then
-		return false, "❌ Key expired\nExpiry: " .. readable_expiry
-	end
-
-	local nonces = load_nonces()
-	if nonces[user_key] then
-		return false, "⚠️ Replay detected\nKey already used"
-	end
-
-	local combo = parsed.username .. ":" .. parsed.salt .. ":" .. tostring(expiry_ts)
-	local expected_hash = sha256.hash(combo)
-	local hashed = sha256.hash(user_key)
-	if hashed ~= expected_hash then
-		return false, "❌ Invalid key\nHash mismatch"
-	end
-
-	nonces[user_key] = now
-	save_nonces(nonces)
-	return true, "✅ Key valid\nExpires: " .. readable_expiry
-end
 local nonce_file = "nonces.db"
 local expiry_tolerance = 60
 
@@ -109,9 +67,27 @@ local function save_nonces(tbl)
 	f:close()
 end
 
+-- Parse key into parts
+local function parse_key_parts(key)
+	local parts = {}
+	for part in string.gmatch(key, "[^:]+") do
+		table.insert(parts, part)
+	end
+	if #parts ~= 3 then return nil end
+	return {
+		username = parts[1],
+		salt = parts[2],
+		expiry_ts = tonumber(parts[3])
+	}
+end
+
 -- Validator
 local function validate_key(user_key)
 	local now = os.time()
+	local parsed = parse_key_parts(user_key)
+	if not parsed then return false, "❌ Invalid key format" end
+
+	local expiry_ts = parsed.expiry_ts
 	local readable_expiry = os.date("%Y-%m-%d %H:%M:%S", expiry_ts)
 
 	if now > (expiry_ts + expiry_tolerance) then
@@ -123,8 +99,9 @@ local function validate_key(user_key)
 		return false, "⚠️ Replay detected\nKey already used"
 	end
 
-	local combo = user_key .. ":" .. salt .. ":" .. tostring(expiry_ts)
-	local hashed = sha256.hash(combo)
+	local combo = parsed.username .. ":" .. parsed.salt .. ":" .. tostring(expiry_ts)
+	local expected_hash = sha256.hash(combo)
+	local hashed = sha256.hash(user_key)
 	if hashed ~= expected_hash then
 		return false, "❌ Invalid key\nHash mismatch"
 	end
