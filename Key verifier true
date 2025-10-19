@@ -172,11 +172,6 @@ end
 validateButton.MouseButton1Click:Connect(function()
 	print("validate clicked")
 	local input = inputBox.Text:gsub("[%z\1-\31]", ""):gsub("%s+$", "")
-	if input == "" then
-		outputLabel.Text = "no input"
-		print("no input")
-		return
-	end
 	local ok, msg = validate(input)
 	outputLabel.Text = msg
 	print(msg)
