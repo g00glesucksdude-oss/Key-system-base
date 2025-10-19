@@ -1,142 +1,273 @@
--- 🔐 Persistent Key Tracking
-local keyFile = "used_keys.txt"
+--// Config
+local SHIFT        = 7
+local SALT         = "sandbox_salt_ggl"
+local USED_FILE    = "used_keys.txt"
+local REMOTE_URL   = "https://raw.githubusercontent.com/g00glesucksdude-oss/BackEnd/refs/heads/main/ebadeeee"
 
-local function loadUsedKeys()
-    local keys = {}
-    if isfile(keyFile) then
-        local content = readfile(keyFile)
-        for line in string.gmatch(content, "[^\r\n]+") do
-            keys[line] = true
+--// Import sha256 directly from GitHub
+local sha256 = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256",
+    true
+))()
+
+--// Services
+local Players = game:GetService("Players")
+local player  = Players.LocalPlayer
+
+--// Base64 decode
+local function base64_decode(data)
+    local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    data = string.gsub(data, '[^'..b..'=]', '')
+    return (data:gsub('.', function(x)
+        if (x == '=') then return '' end
+        local r,f='',(b:find(x)-1)
+        for i=6,1,-1 do r=r..(f%2^i - f%2^(i-1) > 0 and '1' or '0') end
+        return r
+    end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+        if (#x ~= 8) then return '' end
+        local c=0
+        for i=1,8 do c=c + (x:sub(i,i)=='1' and 2^(8-i) or 0) end
+        return string.char(c)
+    end))
+end
+
+--// Caesar reverse
+local function caesar_unshift(text, shift)
+    local out = {}
+    for i = 1, #text do
+        local ch = text:sub(i,i)
+        local byte = string.byte(ch)
+        if ch == "|" then
+            out[#out+1] = ch
+        elseif ch:match("%a") then
+            local base = (ch:match("%u") and string.byte("A")) or string.byte("a")
+            local shifted = ((byte - base - shift) % 26) + base
+            out[#out+1] = string.char(shifted)
+        elseif ch:match("%d") then
+            local n = tonumber(ch)
+            local shifted = (n - shift) % 10
+            out[#out+1] = tostring(shifted)
+        else
+            out[#out+1] = ch
         end
     end
-    return keys
+    return table.concat(out)
 end
 
-local function isUsed(raw)
-    return loadUsedKeys()[raw] == true
+--// Split by pipe
+local function split_pipe(s)
+    local t = {}
+    for part in s:gmatch("([^|]+)") do
+        t[#t+1] = part
+    end
+    return t
 end
 
-local function saveUsedKey(key)
-    if not isUsed(key) then
-        appendfile(keyFile, key .. "\n")
+--// Replay protection
+local function read_used()
+    local set = {}
+    if isfile and isfile(USED_FILE) then
+        local content = readfile(USED_FILE)
+        for line in content:gmatch("[^\r\n]+") do
+            set[line] = true
+        end
+    end
+    return set
+end
+
+local function mark_used(identifier)
+    if appendfile then
+        if not (isfile and isfile(USED_FILE)) and writefile then
+            writefile(USED_FILE, "")
+        end
+        appendfile(USED_FILE, identifier .. "\n")
     end
 end
 
-local function markUsed(raw)
-    saveUsedKey(raw)
-end
-
--- 🧬 Base64 Decoder
-local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-local b64lookup = {}
-for i = 1, #b64chars do
-    b64lookup[b64chars:sub(i, i)] = i - 1
-end
-
-local function b64decode(data)
-    data = data:gsub('[^'..b64chars..'=]', '')
-    local bytes, buffer, bits = {}, 0, 0
-    for i = 1, #data do
-        local c = data:sub(i, i)
-        if c ~= '=' then
-            buffer = buffer * 64 + b64lookup[c]
-            bits = bits + 6
-            if bits >= 8 then
-                bits = bits - 8
-                table.insert(bytes, string.char(math.floor(buffer / 2^bits)))
-                buffer = buffer % 2^bits
+--// Countdown
+local function start_countdown(expiry, onTick, onDone)
+    local function clamp(n) return (n < 0) and 0 or n end
+    task.spawn(function()
+        while true do
+            local remaining = clamp(expiry - os.time())
+            if onTick then onTick(remaining) end
+            if remaining <= 0 then
+                if onDone then onDone() end
+                break
             end
+            task.wait(1)
         end
-    end
-    return table.concat(bytes):gsub("%z", "")
+    end)
 end
 
--- 🔐 Pure Lua SHA-256
-local bit = bit32 or require("bit")
-local function rrotate(x, n) return bit.rrotate(x, n) end
+--// Validation
+local function validate_key(encoded)
+    if type(encoded) ~= "string" or encoded == "" then
+        return false, "Empty key", nil, nil
+    end
 
-function sha256(msg)
-    local K = {
-    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
-} -- [Insert full K array from earlier SHA-256 block]
-    local H = {
-    0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
-    0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
-} -- [Insert full H array from earlier SHA-256 block]
-    -- [Insert full SHA-256 logic from earlier block here]
-    -- Return final digest as hex string
+    local decoded = base64_decode(encoded)
+    if not decoded or decoded == "" then
+        return false, "Invalid Base64", nil, nil
+    end
+
+    local plain = caesar_unshift(decoded, SHIFT)
+    local parts = split_pipe(plain)
+    if #parts ~= 5 or parts[1] ~= "GGL-sandbox" then
+        return false, "Invalid format", nil, nil
+    end
+
+    local expiry_str, payload, digits, digest = parts[2], parts[3], parts[4], parts[5]
+    local expiry = tonumber(expiry_str)
+    if not expiry then
+        return false, "Expiry missing", nil, nil
+    end
+    if os.time() > expiry then
+        return false, "Key expired", nil, nil
+    end
+
+    -- Integrity check
+    local raw = table.concat({expiry_str, payload, digits, SALT}, "|")
+    local check = sha256(raw)
+    if check ~= digest then
+        return false, "Hash mismatch", nil, nil
+    end
+
+    -- Replay protection
+    local used = read_used()
+    local id = digest
+    if used[id] then
+        return false, "Key already used", nil, nil
+    end
+    mark_used(id)
+
+    return true, "Valid key", expiry, plain
 end
 
--- 🖥️ GUI Setup
--- [Same GUI code as before: ScreenGui, Frame, TextBox, Button, Labels, Close]
+--// GUI
+local function build_gui()
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "GGLSandboxKeyUI"
+    sg.ResetOnSpawn = false
+    sg.Parent = game:GetService("CoreGui")
 
--- 🚦 Validation Logic
-button.MouseButton1Click:Connect(function()
-    print("🔍 Validate button clicked")
-    local rawInput = input.Text:match("^%s*(.-)%s*$")
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.fromOffset(380, 180)
+    frame.Position = UDim2.new(0.5, -190, 0.3, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+    frame.BorderSizePixel = 0
+    frame.Parent = sg
 
-    local success, decoded = pcall(b64decode, rawInput)
-    if not success or type(decoded) ~= "string" then
-        countdown.Text = "❌ Decode failed"
-        debugLabel.Text = "Base64 decode error"
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -20, 0, 24)
+    title.Position = UDim2.new(0, 10, 0, 10)
+    title.Text = "GGL Sandbox Key Validator"
+    title.TextColor3 = Color3.fromRGB(220, 220, 230)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.Code
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(1, -20, 0, 32)
+    box.Position = UDim2.new(0, 10, 0, 44)
+    box.PlaceholderText = "Paste Base64 key here"
+    box.Text = ""
+    box.TextColor3 = Color3.fromRGB(240, 240, 240)
+    box.BackgroundColor3 = Color3.fromRGB(32, 32, 36)
+    box.BorderSizePixel = 0
+    box.ClearTextOnFocus = false
+    box.Font = Enum.Font.Code
+    box.Parent = frame
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 120, 0, 30)
+    btn.Position = UDim2.new(0, 10, 0, 86)
+    btn.Text = "Validate"
+    btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.Code
+    btn.Parent = frame
+
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -140, 0, 30)
+    status.Position = UDim2.new(0, 140, 0, 86)
+    status.Text = "Waiting..."
+    status.TextColor3 = Color3.fromRGB(200, 200, 200)
+    status.BackgroundTransparency = 1
+    status.Font = Enum.Font.Code
+    status.TextXAlignment = Enum.TextXAlignment.Left
+    status.Parent = frame
+
+    local countdown = Instance.new("TextLabel")
+    countdown.Size = UDim2.new(1, -20, 0, 30)
+    countdown.Position = UDim2.new(0, 10, 0, 126)
+    countdown.Text = "Expires in: —"
+    countdown.TextColor3 = Color3.fromRGB(200, 200, 200)
+    countdown.BackgroundTransparency = 1
+    countdown.Font = Enum.Font.Code
+    countdown.TextXAlignment = Enum.TextXAlignment.Left
+    countdown.Parent = frame
+
+    return {
+        ScreenGui = sg,
+        Frame = frame,
+        Box = box,
+        Button = btn,
+        StatusLabel = status,
+        CountdownLabel = countdown
+    }
+end
+
+--// Remote script execution (same as previous version)
+local function run_remote_with_expiry(expiry)
+    local src = game:HttpGet(REMOTE_URL)
+
+    -- Inject expiry into environment so the remote can read it
+    if getgenv and type(getgenv) == "function" then
+        local env = getgenv()
+        env.expiry = expiry
+    else
+        _G.expiry = expiry
+    end
+
+    local fn = loadstring(src)
+    return fn()
+end
+
+--// Wire GUI + validation
+local ui = build_gui()
+
+ui.Button.MouseButton1Click:Connect(function()
+    local key = ui.Box.Text
+    ui.StatusLabel.Text = "Validating..."
+    ui.StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+
+    local ok, msg, expiry = validate_key(key)
+    ui.StatusLabel.Text = msg
+
+    if not ok then
+        ui.StatusLabel.TextColor3 = Color3.fromRGB(255, 95, 95)
         return
     end
 
-    print("📥 Decoded key:", decoded)
+    ui.StatusLabel.TextColor3 = Color3.fromRGB(80, 220, 120)
 
-    local expiry, nonce, payload, hash = decoded:match("sandbox%-(%d+)%-(.-)%-(.-)%-(%x+)$")
-    if not expiry or not nonce or not hash then
-        countdown.Text = "❌ Invalid structure"
-        debugLabel.Text = "Malformed key"
-        return
-    end
-
-    if os.time() > tonumber(expiry) then
-        countdown.Text = "⏳ Key expired"
-        debugLabel.Text = "Key expired"
-        return
-    end
-
-    local reconstructed = expiry .. ":" .. nonce .. ":" .. payload
-    local computed = sha256(reconstructed)
-
-    if computed ~= hash then
-        countdown.Text = "🧨 Tamper detected"
-        debugLabel.Text = "SHA-256 mismatch"
-        return
-    end
-
-    if isUsed(decoded) then
-        countdown.Text = "🚫 Already used"
-        debugLabel.Text = "Key reused"
-        return
-    end
-
-    markUsed(decoded)
-    debugLabel.Text = "✅ Key accepted"
-
-    spawn(function()
-        while os.time() <= tonumber(expiry) do
-            local remaining = tonumber(expiry) - os.time()
-            countdown.Text = string.format("Time remaining: %02d:%02d", math.floor(remaining / 60), remaining % 60)
-            wait(1)
+    start_countdown(expiry,
+        function(rem)
+            ui.CountdownLabel.Text = string.format("Expires in: %ds", rem)
+        end,
+        function()
+            ui.StatusLabel.Text = "Key expired. Please revalidate."
+            ui.StatusLabel.TextColor3 = Color3.fromRGB(255, 170, 80)
         end
-        countdown.Text = "🛑 Key expired."
-    end)
+    )
 
-    spawn(function()
-        while os.time() <= tonumber(expiry) do wait(1) end
-        print("🛑 Key expired. Loader halted.")
-    end)
-
-    local script = game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/BackEnd/refs/heads/main/ebadeeee", true)
-    local injected = string.format("local expiry = %d\n%s", tonumber(expiry), script)
-    loadstring(injected)()
+    -- Execute remote with expiry injected
+    local okExec, err = pcall(run_remote_with_expiry, expiry)
+    if not okExec then
+        ui.StatusLabel.Text = "Remote load failed: " .. tostring(err)
+        ui.StatusLabel.TextColor3 = Color3.fromRGB(255, 140, 140)
+    end
 end)
