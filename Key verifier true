@@ -1,27 +1,17 @@
-local salt = "monkey"
-local trackUsedKeys = true
-local enforceExpiry = true
-local runLoadstring = true
-local blockPayloadOnExpiry = true
-local storedkeys = "used_keys"
-local usedKeyFile = "." .. storedkeys .. ".txt"
-
-local sharedEnv = {}
-sharedEnv.shutdownflag = false
-
 local player = game:GetService("Players").LocalPlayer
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 gui.Name = "KeyValidatorGui"
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 420, 0, 220)
-frame.Position = UDim2.new(0.5, -210, 0.5, -110)
+frame.Size = UDim2.new(0.9, 0, 0.4, 0) -- 90% width, 40% height
+frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+frame.AnchorPoint = Vector2.new(0.5, 0.5)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.BorderSizePixel = 0
 
 local inputBox = Instance.new("TextBox", frame)
-inputBox.Size = UDim2.new(1, -20, 0, 40)
+inputBox.Size = UDim2.new(1, -20, 0.2, 0)
 inputBox.Position = UDim2.new(0, 10, 0, 10)
 inputBox.PlaceholderText = "Paste your key here"
 inputBox.TextScaled = true
@@ -29,8 +19,8 @@ inputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 inputBox.TextColor3 = Color3.new(1, 1, 1)
 
 local outputLabel = Instance.new("TextLabel", frame)
-outputLabel.Size = UDim2.new(1, -20, 0, 80)
-outputLabel.Position = UDim2.new(0, 10, 0, 60)
+outputLabel.Size = UDim2.new(1, -20, 0.4, 0)
+outputLabel.Position = UDim2.new(0, 10, 0.25, 0)
 outputLabel.Text = "Awaiting input..."
 outputLabel.TextScaled = true
 outputLabel.TextWrapped = true
@@ -38,130 +28,28 @@ outputLabel.BackgroundTransparency = 1
 outputLabel.TextColor3 = Color3.new(1, 1, 1)
 
 local validateButton = Instance.new("TextButton", frame)
-validateButton.Size = UDim2.new(0.5, -15, 0, 40)
-validateButton.Position = UDim2.new(0, 10, 0, 150)
+validateButton.Size = UDim2.new(0.5, -15, 0.15, 0)
+validateButton.Position = UDim2.new(0, 10, 0.7, 0)
 validateButton.Text = "Validate Key"
 validateButton.TextScaled = true
 validateButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
 validateButton.TextColor3 = Color3.new(1, 1, 1)
 
 local closeButton = Instance.new("TextButton", frame)
-closeButton.Size = UDim2.new(0.5, -15, 0, 40)
-closeButton.Position = UDim2.new(0.5, 5, 0, 150)
+closeButton.Size = UDim2.new(0.5, -15, 0.15, 0)
+closeButton.Position = UDim2.new(0.5, 5, 0.7, 0)
 closeButton.Text = "Close"
 closeButton.TextScaled = true
 closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 closeButton.TextColor3 = Color3.new(1, 1, 1)
 
-local crypto = require(game:GetService("ReplicatedStorage"):WaitForChild("CryptoLib"))
-
-local function b64decode(data)
-	local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-	data = data:gsub('[^'..b..'=]', '')
-	return (data:gsub('.', function(x)
-		if x == '=' then return '' end
-		local r,f = '',(b:find(x)-1)
-		for i=6,1,-1 do r=r..(f%2^i - f%2^(i-1) > 0 and '1' or '0') end
-		return r
-	end):gsub('%d%d%d%d%d%d%d%d', function(x)
-		return string.char(tonumber(x,2))
-	end))
-end
-
-local function toHex(str)
-	return (str:gsub('.', function(c)
-		return string.format('%02x', string.byte(c))
-	end))
-end
-
-local function hasUsedKey(encodedKey)
-	if not trackUsedKeys then return false end
-	if not isfile(usedKeyFile) then return false end
-	local content = readfile(usedKeyFile)
-	return content:find(encodedKey, 1, true) ~= nil
-end
-
-local function markKeyUsed(encodedKey)
-	if trackUsedKeys then
-		appendfile(usedKeyFile, encodedKey .. "\n")
-	end
-end
-
-local function validate(encoded)
-	local decoded = b64decode(encoded)
-	local parts = string.split(decoded, "|")
-	if #parts ~= 3 then return false, "invalid format" end
-
-	local expiry = tonumber(parts[1])
-	local nonce = parts[2]
-	local hash = parts[3]
-
-	if not expiry or not nonce or not hash then return false, "malformed key" end
-	if enforceExpiry and expiry < os.time() then return false, "expired" end
-	if hasUsedKey(encoded) then return false, "already used" end
-
-	local raw = expiry .. "|" .. nonce
-	local expected = crypto.hmac_sha256(raw, salt)
-	local expectedHex = toHex(expected)
-
-	if expectedHex == hash then
-		markKeyUsed(encoded)
-
-		spawn(function()
-			local waitTime = expiry - os.time()
-			if waitTime > 0 then wait(waitTime) end
-			sharedEnv.shutdownflag = true
-			print("Key expired — shutdownflag set")
-		end)
-
-		local remaining = expiry - os.time()
-		local msg = string.format("valid\nexpiry: %s\nremaining: %ds\nnonce: %s",
-			os.date("%Y-%m-%d %H:%M:%S", expiry),
-			remaining,
-			nonce
-		)
-
-		sharedEnv.shutdownflag = false
-
-		if runLoadstring and (not blockPayloadOnExpiry or remaining > 0) then
-			local payload = [[
-				local heartbeat = game:GetService("RunService").Heartbeat
-				local payloadPart = Instance.new("Part", workspace)
-				payloadPart.Name = "PayloadPart"
-				payloadPart.Anchored = true
-				payloadPart.Size = Vector3.new(5, 1, 5)
-				payloadPart.Position = Vector3.new(0, 5, 0)
-				payloadPart.BrickColor = BrickColor.new("Bright green")
-
-				local conn
-				conn = heartbeat:Connect(function()
-					if getfenv(1).shutdownflag then
-						payloadPart:Destroy()
-						conn:Disconnect()
-						print("payload self-destructed")
-					end
-				end)
-			]]
-
-			local f = loadstring(payload)
-			setfenv(f, setmetatable(sharedEnv, { __index = getfenv(0) }))
-			f()
-		end
-
-		return true, msg
-	else
-		return false, "tampered or invalid"
-	end
-end
-
 validateButton.MouseButton1Click:Connect(function()
 	local input = inputBox.Text:gsub("[%z\1-\31]", ""):gsub("%s+$", "")
 	if input == "" then
 		outputLabel.Text = "no input"
-		return
+	else
+		outputLabel.Text = "You entered:\n" .. input
 	end
-	local ok, msg = validate(input)
-	outputLabel.Text = msg
 end)
 
 closeButton.MouseButton1Click:Connect(function()
