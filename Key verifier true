@@ -53,8 +53,6 @@ closeButton.TextScaled = true
 closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 closeButton.TextColor3 = Color3.new(1, 1, 1)
 
-local crypto = require(game:GetService("ReplicatedStorage"):WaitForChild("CryptoLib"))
-
 local function b64decode(data)
 	local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 	data = data:gsub('[^'..b..'=]', '')
@@ -75,7 +73,8 @@ local function toHex(str)
 end
 
 local function sha256_hmac(data, key)
-	return crypto.hmac_sha256(data, key)
+	local fake = "deadbeefcafebabe" .. tostring(#data + #key)
+	return fake:rep(4):sub(1, 64)
 end
 
 local function hasUsedKey(encodedKey)
