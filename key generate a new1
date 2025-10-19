@@ -1,0 +1,46 @@
+import base64, hashlib, random, string, time
+
+def caesar_cipher(text: str, shift: int) -> str:
+    result = []
+    for ch in text:
+        if ch in ["|", "-"]:  # don't shift separators
+            result.append(ch)
+        elif ch.isalpha():
+            base = ord('A') if ch.isupper() else ord('a')
+            result.append(chr((ord(ch) - base + shift) % 26 + base))
+        elif ch.isdigit():
+            result.append(str((int(ch) + shift) % 10))
+        else:
+            result.append(ch)
+    return ''.join(result)
+
+def ask_expiry_seconds() -> int:
+    raw = input("Expiry (e.g., 30s, 15m, 2h): ").strip().lower()
+    try:
+        value = int(raw[:-1])
+        unit = raw[-1]
+        if unit == 's': return value
+        if unit == 'm': return value * 60
+        if unit == 'h': return value * 3600
+    except Exception:
+        pass
+    print("Invalid input. Defaulting to 1h.")
+    return 3600
+
+def generate_key(secret_salt: str, shift: int = 7) -> str:
+    validity_seconds = ask_expiry_seconds()
+    expiry = str(int(time.time()) + validity_seconds)
+    payload = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+    digits = str(random.randint(1000, 9999))
+
+    raw_data = f"{expiry}|{payload}|{digits}"
+    hash_digest = hashlib.sha256((raw_data + "|" + secret_salt).encode()).hexdigest()
+
+    key_plain = f"GGL-sandbox|{expiry}|{payload}|{digits}|{hash_digest}"
+    shifted = caesar_cipher(key_plain, shift)
+    encoded = base64.b64encode(shifted.encode()).decode()
+    print("Key:", encoded)
+    return encoded
+
+if __name__ == "__main__":
+    generate_key(secret_salt="sandbox_salt_ggl", shift=7)
