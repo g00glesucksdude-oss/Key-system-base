@@ -1,4 +1,3 @@
--- ⚙️ Config
 local salt = "monkey"
 local trackUsedKeys = true
 local enforceExpiry = true
@@ -7,15 +6,13 @@ local blockPayloadOnExpiry = true
 local storedkeys = "used_keys"
 local usedKeyFile = "." .. storedkeys .. ".txt"
 
--- 🌐 Shared environment
 local sharedEnv = {}
 setfenv(1, setmetatable(sharedEnv, { __index = getfenv(0) }))
 
--- 🖥️ GUI Setup
-local gui = Instance.new("ScreenGui")
+local player = game:GetService("Players").LocalPlayer
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 gui.Name = "KeyValidatorGui"
 gui.ResetOnSpawn = false
-gui.Parent = game:GetService("CoreGui")
 
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 420, 0, 220)
@@ -56,109 +53,130 @@ closeButton.TextScaled = true
 closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 closeButton.TextColor3 = Color3.new(1, 1, 1)
 
--- 🔧 Helpers
 local function b64decode(data)
-    local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    data = data:gsub('[^'..b..'=]', '')
-    return (data:gsub('.', function(x)
-        if x == '=' then return '' end
-        local r,f = '',(b:find(x)-1)
-        for i=6,1,-1 do r=r..(f%2^i - f%2^(i-1) > 0 and '1' or '0') end
-        return r
-    end):gsub('%d%d%d%d%d%d%d%d', function(x)
-        return string.char(tonumber(x,2))
-    end))
+	local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+	data = data:gsub('[^'..b..'=]', '')
+	return (data:gsub('.', function(x)
+		if x == '=' then return '' end
+		local r,f = '',(b:find(x)-1)
+		for i=6,1,-1 do r=r..(f%2^i - f%2^(i-1) > 0 and '1' or '0') end
+		return r
+	end):gsub('%d%d%d%d%d%d%d%d', function(x)
+		return string.char(tonumber(x,2))
+	end))
 end
 
 local function toHex(str)
-    return (str:gsub('.', function(c)
-        return string.format('%02x', string.byte(c))
-    end))
+	return (str:gsub('.', function(c)
+		return string.format('%02x', string.byte(c))
+	end))
 end
 
 local function sha256_hmac(data, key)
-    local fake = "deadbeefcafebabe" .. tostring(#data + #key)
-    return fake:rep(4):sub(1, 64)
+	local fake = "deadbeefcafebabe" .. tostring(#data + #key)
+	return fake:rep(4):sub(1, 64)
 end
 
 local function hasUsedKey(encodedKey)
-    if not trackUsedKeys then return false end
-    if not isfile(usedKeyFile) then return false end
-    local content = readfile(usedKeyFile)
-    return content:find(encodedKey, 1, true) ~= nil
+	if not trackUsedKeys then return false end
+	if not isfile(usedKeyFile) then return false end
+	local content = readfile(usedKeyFile)
+	return content:find(encodedKey, 1, true) ~= nil
 end
 
 local function markKeyUsed(encodedKey)
-    if trackUsedKeys then
-        appendfile(usedKeyFile, encodedKey .. "\n")
-    end
+	if trackUsedKeys then
+		appendfile(usedKeyFile, encodedKey .. "\n")
+	end
 end
 
--- ✅ Key validator
 local function validate(encoded)
-    local decoded = b64decode(encoded)
-    print("🔍 Decoded key:", decoded)
+	local decoded = b64decode(encoded)
+	print("decoded:", decoded)
 
-    local parts = string.split(decoded, "|")
-    if #parts ~= 3 then
-        print("❌ Debug: Invalid format — expected 3 parts, got", #parts)
-        return false, "❌ Invalid format"
-    end
+	local parts = string.split(decoded, "|")
+	if #parts ~= 3 then
+		print("invalid format")
+		return false, "invalid format"
+	end
 
-    local expiry = tonumber(parts[1])
-    local nonce = parts[2]
-    local hash = parts[3]
+	local expiry = tonumber(parts[1])
+	local nonce = parts[2]
+	local hash = parts[3]
 
-    print("🧩 Parsed parts:")
-    print("  Expiry:", expiry)
-    print("  Nonce:", nonce)
-    print("  Hash:", hash)
+	print("expiry:", expiry)
+	print("nonce:", nonce)
+	print("hash:", hash)
 
-    if not expiry or not nonce or not hash then
-        print("❌ Debug: Malformed key — missing expiry, nonce, or hash")
-        return false, "❌ Malformed key"
-    end
+	if not expiry or not nonce or not hash then
+		print("malformed key")
+		return false, "malformed key"
+	end
 
-    if enforceExpiry and expiry < os.time() then
-        print("⏳ Debug: Key expired — current:", os.time(), "expiry:", expiry)
-        return false, "❌ Key expired"
-    end
+	if enforceExpiry and expiry < os.time() then
+		print("expired")
+		return false, "expired"
+	end
 
-    if hasUsedKey(encoded) then
-        print("🔁 Debug: Key already used — rejecting")
-        return false, "❌ Rejected: key already used"
-    end
+	if hasUsedKey(encoded) then
+		print("already used")
+		return false, "already used"
+	end
 
-    local raw = expiry .. "|" .. nonce
-    local expected = toHex(sha256_hmac(raw, salt))
+	local raw = expiry .. "|" .. nonce
+	local expected = toHex(sha256_hmac(raw, salt))
 
-    print("🔐 Debug: HMAC check")
-    print("  Raw string:", raw)
-    print("  Expected hash:", expected)
-    print("  Provided hash:", hash)
+	print("raw:", raw)
+	print("expected:", expected)
 
-    if expected == hash then
-        print("✅ Debug: Hash match — key is valid")
-        markKeyUsed(encoded)
+	if expected == hash then
+		markKeyUsed(encoded)
+		local remaining = expiry - os.time()
+		local msg = string.format("valid\nexpiry: %s\nremaining: %ds\nnonce: %s",
+			os.date("%Y-%m-%d %H:%M:%S", expiry),
+			remaining,
+			nonce
+		)
 
-        local remaining = expiry - os.time()
-        local status = remaining > 0 and "✅ Valid key" or "⚠️ Expired but untampered"
-        local msg = string.format("%s\n🕒 Expiry: %s\n⏳ Remaining: %ds\n🔁 Nonce: %s",
-            status,
-            os.date("%Y-%m-%d %H:%M:%S", expiry),
-            remaining,
-            nonce
-        )
+		sharedEnv.shutdownflag = false
 
-        sharedEnv.shutdownflag = false
+		if runLoadstring and (not blockPayloadOnExpiry or remaining > 0) then
+			loadstring([[
+				local heartbeat = game:GetService("RunService").Heartbeat
+				local payloadPart = Instance.new("Part", workspace)
+				payloadPart.Name = "PayloadPart"
+				payloadPart.Anchored = true
+				payloadPart.Size = Vector3.new(5, 1, 5)
+				payloadPart.Position = Vector3.new(0, 5, 0)
+				payloadPart.BrickColor = BrickColor.new("Bright green")
 
-        if runLoadstring and (not blockPayloadOnExpiry or remaining > 0) then
-            loadstring([[ -- payload block here ]])()
-        end
+				local conn
+				conn = heartbeat:Connect(function()
+					if getfenv(1).shutdownflag then
+						payloadPart:Destroy()
+						conn:Disconnect()
+						print("payload self-destructed")
+					end
+				end)
+			]])()
+		end
 
-        return true, msg
-    else
-        print("❌ Debug: Hash mismatch — key is tampered or invalid")
-        return false, "❌ Tampered or invalid key"
-    end
+		return true, msg
+	else
+		print("hash mismatch")
+		return false, "tampered or invalid"
+	end
 end
+
+validateButton.MouseButton1Click:Connect(function()
+	print("validate clicked")
+	local input = inputBox.Text:gsub("[%z\1-\31]", ""):gsub("%s+$", "")
+	local ok, msg = validate(input)
+	outputLabel.Text = msg
+	print(msg)
+end)
+
+closeButton.MouseButton1Click:Connect(function()
+	print("close clicked")
+	gui:Destroy()
+end)
