@@ -1,3 +1,4 @@
+-- Config block (dynamic use everywhere)
 local CONFIG = {
     salt = "secret_salt",
     xor_shift = 7,
@@ -5,43 +6,68 @@ local CONFIG = {
     split_char = "|",
     execute_payload = true,
     signal_expiry = true,
-    validfor = 60,
+    validfor = 60, -- seconds
     varexpiry = "myexpiry",
     varpayload = "mypayload",
     varexpired = "myexpired",
     varisexpired = "is_expired"
 }
 
+-- Load SHA-256 from your repo (module returns a function that yields sha256)
+local sha_loader = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256"))()
+local sha256 = sha_loader
+
+-- XOR deobfuscation (inverse of Python xor_obfuscate)
 local function xor_deobfuscate(data, salt, shift)
     local result = {}
     for i = 1, #data do
         local key = string.byte(salt:sub((i - 1) % #salt + 1)) ~ shift
-        table.insert(result, string.char(string.byte(data:sub(i, i)) ~ key))
+        result[i] = string.char(string.byte(data:sub(i, i)) ~ key)
     end
     return table.concat(result)
 end
 
+-- Replay protection: check if nonce is already used (executor file APIs required)
 local function nonce_used(nonce)
     local path = "used_nonces.txt"
+    if not isfile or not readfile or not writefile then
+        return false -- If file APIs unavailable, skip replay check gracefully
+    end
     if not isfile(path) then writefile(path, "") end
-    for line in string.gmatch(readfile(path), "[^\r\n]+") do
-        if line == nonce then return true end
+    local content = readfile(path) or ""
+    for line in string.gmatch(content, "[^\r\n]+") do
+        if line == nonce then
+            return true
+        end
     end
     return false
 end
 
 local function mark_nonce_used(nonce)
-    appendfile("used_nonces.txt", nonce .. "\n")
+    if appendfile then
+        appendfile("used_nonces.txt", nonce .. "\n")
+    end
 end
 
+-- GUI wiring (uses your provided layout)
 local gui = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/gui"))()
 local textbox, button, label = gui.TextBox, gui.Button, gui.Label
 
+-- Validation logic
 button.MouseButton1Click:Connect(function()
     local input = textbox.Text
+    if not input or input == "" then
+        label.Text = "Enter a key"
+        return
+    end
+
+    -- Decrypt and parse
     local decrypted = xor_deobfuscate(input, CONFIG.salt, CONFIG.xor_shift)
     local parts = string.split(decrypted, CONFIG.split_char)
-    if #parts ~= 6 or parts[1] ~= CONFIG.header then label.Text = "Invalid format" return end
+    if #parts ~= 6 or parts[1] ~= CONFIG.header then
+        label.Text = "Invalid format"
+        return
+    end
 
     local validfor = tonumber(parts[2])
     local expiresat = tonumber(parts[3])
@@ -49,18 +75,38 @@ button.MouseButton1Click:Connect(function()
     local nonce = parts[5]
     local digest = parts[6]
 
-    local expected = game:GetService("HttpService"):GenerateSHA256(
-        validfor .. CONFIG.split_char ..
-        expiresat .. CONFIG.split_char ..
-        payload .. CONFIG.split_char ..
-        nonce .. CONFIG.split_char ..
-        CONFIG.salt
-    )
+    if not validfor or not expiresat or not nonce or not digest then
+        label.Text = "Malformed key fields"
+        return
+    end
 
-    if digest ~= expected then label.Text = "Digest mismatch" return end
-    if nonce_used(nonce) then label.Text = "Replay detected" return end
+    -- Enforce configured validity window (anti-tamper)
+    if validfor ~= CONFIG.validfor then
+        label.Text = "Invalid validity window"
+        return
+    end
+
+    -- Recompute expected digest with the same field order used in Python
+    local concat = tostring(validfor)
+        .. CONFIG.split_char .. tostring(expiresat)
+        .. CONFIG.split_char .. payload
+        .. CONFIG.split_char .. nonce
+        .. CONFIG.split_char .. CONFIG.salt
+
+    local expected = sha256(concat)
+    if (digest or ""):lower() ~= (expected or ""):lower() then
+        label.Text = "Digest mismatch"
+        return
+    end
+
+    -- Replay protection
+    if nonce_used(nonce) then
+        label.Text = "Replay detected"
+        return
+    end
     mark_nonce_used(nonce)
 
+    -- Inject getgenv() variables using config names
     getgenv()[CONFIG.varexpiry] = expiresat
     getgenv()[CONFIG.varpayload] = payload
     getgenv()[CONFIG.varexpired] = false
@@ -68,9 +114,10 @@ button.MouseButton1Click:Connect(function()
         return os.time() >= getgenv()[CONFIG.varexpiry]
     end
 
-    spawn(function()
+    -- Countdown display: updates every second until expiry; flips expired flag
+    task.spawn(function()
         while true do
-            wait(1)
+            task.wait(1)
             local left = getgenv()[CONFIG.varexpiry] - os.time()
             if left <= 0 then
                 getgenv()[CONFIG.varexpired] = true
@@ -82,7 +129,13 @@ button.MouseButton1Click:Connect(function()
         end
     end)
 
+    -- Execute payload only if valid and within window
     if not getgenv()[CONFIG.varisexpired]() and CONFIG.execute_payload then
-        loadstring(payload)()
+        local ok, err = pcall(function()
+            loadstring(getgenv()[CONFIG.varpayload])()
+        end)
+        if not ok then
+            label.Text = "Payload error: " .. tostring(err)
+        end
     end
 end)
