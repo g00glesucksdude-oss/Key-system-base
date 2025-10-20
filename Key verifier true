@@ -16,12 +16,12 @@ local CONFIG = {
 loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256"))()
 -- Now sha256() is available globally
 
--- XOR deobfuscation
+-- XOR deobfuscation using bit32.bxor
 local function xor_deobfuscate(data, salt, shift)
     local result = {}
     for i = 1, #data do
-        local key = string.byte(salt:sub((i - 1) % #salt + 1)) ~ shift
-        result[i] = string.char(string.byte(data:sub(i, i)) ~ key)
+        local key = bit32.bxor(string.byte(salt:sub((i - 1) % #salt + 1)), shift)
+        result[i] = string.char(bit32.bxor(string.byte(data:sub(i, i)), key))
     end
     return table.concat(result)
 end
@@ -81,7 +81,7 @@ button.MouseButton1Click:Connect(function()
         return
     end
 
-    -- Compute expected digest with your sha256
+    -- Compute expected digest with sha256
     local concat = tostring(validfor)
         .. CONFIG.split_char .. tostring(expiresat)
         .. CONFIG.split_char .. payload
