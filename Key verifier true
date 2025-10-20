@@ -1,4 +1,3 @@
--- Config block (dynamic use everywhere)
 local CONFIG = {
     salt = "secret_salt",
     xor_shift = 7,
@@ -13,11 +12,11 @@ local CONFIG = {
     varisexpired = "is_expired"
 }
 
--- Load SHA-256 from your repo (module returns a function that yields sha256)
-local sha_loader = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256"))()
-local sha256 = sha_loader
+-- Load SHA-256 implementation from your repo
+loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256"))()
+-- Now sha256() is available globally
 
--- XOR deobfuscation (inverse of Python xor_obfuscate)
+-- XOR deobfuscation
 local function xor_deobfuscate(data, salt, shift)
     local result = {}
     for i = 1, #data do
@@ -27,18 +26,16 @@ local function xor_deobfuscate(data, salt, shift)
     return table.concat(result)
 end
 
--- Replay protection: check if nonce is already used (executor file APIs required)
+-- Replay protection
 local function nonce_used(nonce)
     local path = "used_nonces.txt"
     if not isfile or not readfile or not writefile then
-        return false -- If file APIs unavailable, skip replay check gracefully
+        return false -- skip if file APIs not supported
     end
     if not isfile(path) then writefile(path, "") end
     local content = readfile(path) or ""
     for line in string.gmatch(content, "[^\r\n]+") do
-        if line == nonce then
-            return true
-        end
+        if line == nonce then return true end
     end
     return false
 end
@@ -49,7 +46,7 @@ local function mark_nonce_used(nonce)
     end
 end
 
--- GUI wiring (uses your provided layout)
+-- Load GUI
 local gui = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/gui"))()
 local textbox, button, label = gui.TextBox, gui.Button, gui.Label
 
@@ -61,7 +58,6 @@ button.MouseButton1Click:Connect(function()
         return
     end
 
-    -- Decrypt and parse
     local decrypted = xor_deobfuscate(input, CONFIG.salt, CONFIG.xor_shift)
     local parts = string.split(decrypted, CONFIG.split_char)
     if #parts ~= 6 or parts[1] ~= CONFIG.header then
@@ -80,13 +76,12 @@ button.MouseButton1Click:Connect(function()
         return
     end
 
-    -- Enforce configured validity window (anti-tamper)
     if validfor ~= CONFIG.validfor then
         label.Text = "Invalid validity window"
         return
     end
 
-    -- Recompute expected digest with the same field order used in Python
+    -- Compute expected digest with your sha256
     local concat = tostring(validfor)
         .. CONFIG.split_char .. tostring(expiresat)
         .. CONFIG.split_char .. payload
@@ -99,14 +94,13 @@ button.MouseButton1Click:Connect(function()
         return
     end
 
-    -- Replay protection
     if nonce_used(nonce) then
         label.Text = "Replay detected"
         return
     end
     mark_nonce_used(nonce)
 
-    -- Inject getgenv() variables using config names
+    -- Inject globals
     getgenv()[CONFIG.varexpiry] = expiresat
     getgenv()[CONFIG.varpayload] = payload
     getgenv()[CONFIG.varexpired] = false
@@ -114,7 +108,7 @@ button.MouseButton1Click:Connect(function()
         return os.time() >= getgenv()[CONFIG.varexpiry]
     end
 
-    -- Countdown display: updates every second until expiry; flips expired flag
+    -- Countdown updater
     task.spawn(function()
         while true do
             task.wait(1)
@@ -129,7 +123,7 @@ button.MouseButton1Click:Connect(function()
         end
     end)
 
-    -- Execute payload only if valid and within window
+    -- Execute payload if valid
     if not getgenv()[CONFIG.varisexpired]() and CONFIG.execute_payload then
         local ok, err = pcall(function()
             loadstring(getgenv()[CONFIG.varpayload])()
