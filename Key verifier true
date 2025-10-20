@@ -9,7 +9,8 @@ local CONFIG = {
     varexpiry = "myexpiry",
     varpayload = "mypayload",
     varexpired = "myexpired",
-    varisexpired = "is_expired"
+    varisexpired = "is_expired",
+    noncefile = "used_nonces.txt" -- <--- configurable nonce log file
 }
 
 -- Load SHA-256 implementation from your repo
@@ -28,7 +29,7 @@ end
 
 -- Replay protection
 local function nonce_used(nonce)
-    local path = "used_nonces.txt"
+    local path = CONFIG.noncefile
     if not isfile or not readfile or not writefile then
         return false -- skip if file APIs not supported
     end
@@ -42,26 +43,32 @@ end
 
 local function mark_nonce_used(nonce)
     if appendfile then
-        appendfile("used_nonces.txt", nonce .. "\n")
+        appendfile(CONFIG.noncefile, nonce .. "\n")
     end
 end
 
--- Load GUI
-local gui = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/gui"))()
-local textbox, button, label = gui.TextBox, gui.Button, gui.Label
+-- Load GUI (this builds the interface and fires KeyValidationEvent)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/gui"))()
 
--- Validation logic
-button.MouseButton1Click:Connect(function()
-    local input = textbox.Text
+-- Grab the event the GUI fires when Validate is clicked
+local event = game:GetService("CoreGui"):WaitForChild("KeyValidationEvent")
+
+-- Grab the label so we can update it
+local gui = game:GetService("Players").LocalPlayer.PlayerGui:WaitForChild("KeyValidatorGui")
+local frame = gui:WaitForChild("Frame")
+local outputLabel = frame:WaitForChild("TextLabel")
+
+-- Hook validation logic to the event
+event.Event:Connect(function(input)
     if not input or input == "" then
-        label.Text = "Enter a key"
+        outputLabel.Text = "Enter a key"
         return
     end
 
     local decrypted = xor_deobfuscate(input, CONFIG.salt, CONFIG.xor_shift)
     local parts = string.split(decrypted, CONFIG.split_char)
     if #parts ~= 6 or parts[1] ~= CONFIG.header then
-        label.Text = "Invalid format"
+        outputLabel.Text = "Invalid format"
         return
     end
 
@@ -72,30 +79,35 @@ button.MouseButton1Click:Connect(function()
     local digest = parts[6]
 
     if not validfor or not expiresat or not nonce or not digest then
-        label.Text = "Malformed key fields"
+        outputLabel.Text = "Malformed key fields"
         return
     end
 
     if validfor ~= CONFIG.validfor then
-        label.Text = "Invalid validity window"
+        outputLabel.Text = "Invalid validity window"
         return
     end
 
-    -- Compute expected digest with sha256
+    -- Compute expected digest
     local concat = tostring(validfor)
         .. CONFIG.split_char .. tostring(expiresat)
         .. CONFIG.split_char .. payload
         .. CONFIG.split_char .. nonce
         .. CONFIG.split_char .. CONFIG.salt
 
+    if type(sha256) ~= "function" then
+        outputLabel.Text = "SHA256 not loaded"
+        return
+    end
+
     local expected = sha256(concat)
     if (digest or ""):lower() ~= (expected or ""):lower() then
-        label.Text = "Digest mismatch"
+        outputLabel.Text = "Digest mismatch"
         return
     end
 
     if nonce_used(nonce) then
-        label.Text = "Replay detected"
+        outputLabel.Text = "Replay detected"
         return
     end
     mark_nonce_used(nonce)
@@ -115,10 +127,10 @@ button.MouseButton1Click:Connect(function()
             local left = getgenv()[CONFIG.varexpiry] - os.time()
             if left <= 0 then
                 getgenv()[CONFIG.varexpired] = true
-                label.Text = "Key expired"
+                outputLabel.Text = "Key expired"
                 break
             else
-                label.Text = "Time left: " .. left .. "s"
+                outputLabel.Text = "Time left: " .. left .. "s"
             end
         end
     end)
@@ -129,7 +141,7 @@ button.MouseButton1Click:Connect(function()
             loadstring(getgenv()[CONFIG.varpayload])()
         end)
         if not ok then
-            label.Text = "Payload error: " .. tostring(err)
+            outputLabel.Text = "Payload error: " .. tostring(err)
         end
     end
 end)
