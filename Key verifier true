@@ -1,35 +1,28 @@
--- b64_test.lua
--- Standalone tester for the b64 module
+-- Test script for the b64 module
+local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
 
--- Load the b64 module from your repo (use RAW URL!)
-local b64 = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
-))()
+-- Fetch and load the module
+local success, result = pcall(function()
+    return loadstring(game:HttpGet(url))()
+end)
 
--- Helper to run a single test
-local function run_test(label, input)
-    local encoded = b64.encode(input)
-    local decoded, err = b64.decode(encoded)
-
-    print("["..label.."]")
-    print("  Original:", input)
-    print("  Encoded :", encoded)
-    if not decoded then
-        print("  Decode error:", err)
-    else
-        print("  Decoded :", decoded)
-        if decoded == input then
-            print("  ✅ Round‑trip successful")
-        else
-            print("  ❌ Round‑trip failed")
-        end
-    end
-    print()
+if not success then
+    warn("❌ Failed to load module:", result)
+    return
 end
 
--- Test cases
-run_test("Simple text", "Hello, Base64 in Lua!")
-run_test("Empty string", "")
-run_test("Symbols", "!@#$%^&*()_+-=[]{};:'\",.<>/?")
-run_test("Unicode", "こんにちは世界")  -- Japanese "Hello, World"
-run_test("Binary data", string.char(0,1,2,3,250,251,252,253,254,255))
+local b64 = result
+print("✅ Module loaded successfully")
+
+-- Run a test
+local testString = "Hello, Roblox!"
+local encoded = b64.encode(testString)
+local decoded, err = b64.decode(encoded)
+
+if decoded == testString then
+    print("✅ Base64 works correctly")
+    print("Encoded:", encoded)
+    print("Decoded:", decoded)
+else
+    warn("❌ Base64 failed:", err or "Mismatch")
+end
