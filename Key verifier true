@@ -1,18 +1,22 @@
--- Load the raw file directly
 local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
 local src = game:HttpGet(url)
 
--- Wrap it so it always returns a table
-local wrapped = src .. [[
+-- Load the raw file exactly as written
+local fn, err = loadstring(src)
+if not fn then
+    warn("Parse error in b64 file:", err)
+    return
+end
+fn()  -- execute it, so any globals it defines are now in the environment
 
-return {
-    encode = encode or b64_encode,
-    decode = decode or b64_decode
-}]]
+-- Now wrap those globals into a table
+local b64 = {
+    encode = rawget(_G, "encode") or rawget(_G, "b64_encode"),
+    decode = rawget(_G, "decode") or rawget(_G, "b64_decode"),
+}
 
-local ok, b64 = pcall(loadstring(wrapped))
-if not ok then
-    warn("❌ Failed to load b64:", b64)
+if not (b64.encode and b64.decode) then
+    warn("b64 file didn’t define encode/decode functions")
     return
 end
 
@@ -20,6 +24,5 @@ end
 local test = "Hello, Roblox!"
 local enc = b64.encode(test)
 local dec = b64.decode(enc)
-
 print("Encoded:", enc)
 print("Decoded:", dec)
