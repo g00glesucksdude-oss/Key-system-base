@@ -1,28 +1,12 @@
--- Test script for the b64 module
 local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
+local chunk = game:HttpGet(url)
+print("Raw length:", #chunk)
 
--- Fetch and load the module
-local success, result = pcall(function()
-    return loadstring(game:HttpGet(url))()
-end)
-
-if not success then
-    warn("❌ Failed to load module:", result)
+local fn, err = loadstring(chunk)
+if not fn then
+    warn("Load error:", err)
     return
 end
 
-local b64 = result
-print("✅ Module loaded successfully")
-
--- Run a test
-local testString = "Hello, Roblox!"
-local encoded = b64.encode(testString)
-local decoded, err = b64.decode(encoded)
-
-if decoded == testString then
-    print("✅ Base64 works correctly")
-    print("Encoded:", encoded)
-    print("Decoded:", decoded)
-else
-    warn("❌ Base64 failed:", err or "Mismatch")
-end
+local result = fn()
+print("Type of result:", typeof(result))
