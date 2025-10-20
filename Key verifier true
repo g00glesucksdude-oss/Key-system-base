@@ -1,25 +1,25 @@
--- Stage 1: Load the b64 library
-local b64url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
-local b64src = game:HttpGet(b64url)
-local b64fn = loadstring(b64src)
-local b64 = b64fn()  -- if the file returns a table
--- If it doesn’t return, but defines globals, just call b64_encode / b64_decode directly
+-- Load the raw file directly
+local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
+local src = game:HttpGet(url)
 
-print("Base64 loaded")
+-- Wrap it so it always returns a table
+local wrapped = src .. [[
 
--- Quick sanity check
-if b64 and b64.encode and b64.decode then
-    local test = "Hello"
-    local enc = b64.encode(test)
-    local dec = b64.decode(enc)
-    print("Encoded:", enc)
-    print("Decoded:", dec)
+return {
+    encode = encode or b64_encode,
+    decode = decode or b64_decode
+}]]
+
+local ok, b64 = pcall(loadstring(wrapped))
+if not ok then
+    warn("❌ Failed to load b64:", b64)
+    return
 end
 
--- Stage 2: Load your dependent module
-local moduleUrl = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/yourmodule"
-local moduleSrc = game:HttpGet(moduleUrl)
-local moduleFn = loadstring(moduleSrc)
-local module = moduleFn()
+-- Test
+local test = "Hello, Roblox!"
+local enc = b64.encode(test)
+local dec = b64.decode(enc)
 
-print("Module loaded:", typeof(module))
+print("Encoded:", enc)
+print("Decoded:", dec)
