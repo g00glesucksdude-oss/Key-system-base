@@ -1,12 +1,25 @@
-local url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
-local chunk = game:HttpGet(url)
-print("Raw length:", #chunk)
+-- Stage 1: Load the b64 library
+local b64url = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
+local b64src = game:HttpGet(b64url)
+local b64fn = loadstring(b64src)
+local b64 = b64fn()  -- if the file returns a table
+-- If it doesn’t return, but defines globals, just call b64_encode / b64_decode directly
 
-local fn, err = loadstring(chunk)
-if not fn then
-    warn("Load error:", err)
-    return
+print("Base64 loaded")
+
+-- Quick sanity check
+if b64 and b64.encode and b64.decode then
+    local test = "Hello"
+    local enc = b64.encode(test)
+    local dec = b64.decode(enc)
+    print("Encoded:", enc)
+    print("Decoded:", dec)
 end
 
-local result = fn()
-print("Type of result:", typeof(result))
+-- Stage 2: Load your dependent module
+local moduleUrl = "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/yourmodule"
+local moduleSrc = game:HttpGet(moduleUrl)
+local moduleFn = loadstring(moduleSrc)
+local module = moduleFn()
+
+print("Module loaded:", typeof(module))
