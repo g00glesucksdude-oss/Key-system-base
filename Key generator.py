@@ -1,40 +1,52 @@
-local CONFIG = {
-    salt = "secret_salt",
-    xor_shift = 7,
-    header = "GGL-sandbox",
-    split_char = "|",
-    execute_payload = true,     -- run payload if valid
-    signal_expiry = true,       -- flip expired flag when time runs out
-    validfor = 60,              -- seconds
-    varexpiry = "myexpiry",     -- global var names
-    varpayload = "mypayload",
-    varexpired = "myexpired",
-    varisexpired = "is_expired",
-    noncefile = "used_nonces.txt", -- replay log filename
-    payload_mode = "code",      -- "code" = run with loadstring, "url" = fetch and run
-    show_timer = true,          -- update label with countdown
-    error_prefix = "[KeySys] ", -- prepend to error messages
-    max_payload_length = 2000   -- reject payloads longer than this
+import time, hashlib, random, string
+
+CONFIG = {
+    "salt": "secret_salt",
+    "xor_shift": 7,
+    "header": "GGL-sandbox",
+    "split_char": "|",
+    "validfor": 60,  # seconds
 }
 
--- Load SHA-256 implementation from your repo
-loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256"))()
--- Now sha256() is available globally
+def xor_obfuscate(data: str, salt: str, shift: int) -> str:
+    out = []
+    for i, ch in enumerate(data):
+        key = ord(salt[i % len(salt)]) ^ shift
+        out.append(chr(ord(ch) ^ key))
+    return "".join(out)
 
--- XOR deobfuscation using bit32.bxor
-local function xor_deobfuscate(data, salt, shift)
-    local result = {}
-    for i = 1, #data do
-        local key = bit32.bxor(string.byte(salt:sub((i - 1) % #salt + 1)), shift)
-        result[i] = string.char(bit32.bxor(string.byte(data:sub(i, i)), key))
-    end
-    return table.concat(result)
-end
+def generate_key(payload: str) -> str:
+    validfor = CONFIG["validfor"]
+    expiresat = int(time.time()) + validfor
+    nonce = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
 
--- Replay protection
-local function nonce_used(nonce)
-    local path = CONFIG.noncefile
-    if not isfile or not readfile or not writefile then
+    # Build the base string (without digest)
+    base_fields = [
+        CONFIG["header"],
+        str(validfor),
+        str(expiresat),
+        payload,
+        nonce
+    ]
+    base = CONFIG["split_char"].join(base_fields)
+
+    # Compute digest over fields (excluding header) + salt
+    digest_input = CONFIG["split_char"].join([
+        str(validfor),
+        str(expiresat),
+        payload,
+        nonce,
+        CONFIG["salt"]
+    ])
+    digest = hashlib.sha256(digest_input.encode()).hexdigest()
+
+    full = base + CONFIG["split_char"] + digest
+    return xor_obfuscate(full, CONFIG["salt"], CONFIG["xor_shift"])
+
+# Example usage
+if __name__ == "__main__":
+    key = generate_key("print('Hello from payload')")
+    print("Generated key:", key)    if not isfile or not readfile or not writefile then
         return false -- skip if file APIs not supported
     end
     if not isfile(path) then writefile(path, "") end
