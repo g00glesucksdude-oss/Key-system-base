@@ -1,273 +1,88 @@
---// Config
-local SHIFT        = 7
-local SALT         = "sandbox_salt_ggl"
-local USED_FILE    = "used_keys.txt"
-local REMOTE_URL   = "https://raw.githubusercontent.com/g00glesucksdude-oss/BackEnd/refs/heads/main/ebadeeee"
+local CONFIG = {
+    salt = "secret_salt",
+    xor_shift = 7,
+    header = "GGL-sandbox",
+    split_char = "|",
+    execute_payload = true,
+    signal_expiry = true,
+    validfor = 60,
+    varexpiry = "myexpiry",
+    varpayload = "mypayload",
+    varexpired = "myexpired",
+    varisexpired = "is_expired"
+}
 
---// Import sha256 directly from GitHub
-local sha256 = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/g00glesucksdude-oss/Key-system-base/refs/heads/main/sha256",
-    true
-))()
-
---// Services
-local Players = game:GetService("Players")
-local player  = Players.LocalPlayer
-
---// Base64 decode
-local function base64_decode(data)
-    local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    data = string.gsub(data, '[^'..b..'=]', '')
-    return (data:gsub('.', function(x)
-        if (x == '=') then return '' end
-        local r,f='',(b:find(x)-1)
-        for i=6,1,-1 do r=r..(f%2^i - f%2^(i-1) > 0 and '1' or '0') end
-        return r
-    end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
-        if (#x ~= 8) then return '' end
-        local c=0
-        for i=1,8 do c=c + (x:sub(i,i)=='1' and 2^(8-i) or 0) end
-        return string.char(c)
-    end))
+local function xor_deobfuscate(data, salt, shift)
+    local result = {}
+    for i = 1, #data do
+        local key = string.byte(salt:sub((i - 1) % #salt + 1)) ~ shift
+        table.insert(result, string.char(string.byte(data:sub(i, i)) ~ key))
+    end
+    return table.concat(result)
 end
 
---// Caesar reverse
-local function caesar_unshift(text, shift)
-    local out = {}
-    for i = 1, #text do
-        local ch = text:sub(i,i)
-        local byte = string.byte(ch)
-        if ch == "|" then
-            out[#out+1] = ch
-        elseif ch:match("%a") then
-            local base = (ch:match("%u") and string.byte("A")) or string.byte("a")
-            local shifted = ((byte - base - shift) % 26) + base
-            out[#out+1] = string.char(shifted)
-        elseif ch:match("%d") then
-            local n = tonumber(ch)
-            local shifted = (n - shift) % 10
-            out[#out+1] = tostring(shifted)
-        else
-            out[#out+1] = ch
-        end
+local function nonce_used(nonce)
+    local path = "used_nonces.txt"
+    if not isfile(path) then writefile(path, "") end
+    for line in string.gmatch(readfile(path), "[^\r\n]+") do
+        if line == nonce then return true end
     end
-    return table.concat(out)
+    return false
 end
 
---// Split by pipe
-local function split_pipe(s)
-    local t = {}
-    for part in s:gmatch("([^|]+)") do
-        t[#t+1] = part
-    end
-    return t
+local function mark_nonce_used(nonce)
+    appendfile("used_nonces.txt", nonce .. "\n")
 end
 
---// Replay protection
-local function read_used()
-    local set = {}
-    if isfile and isfile(USED_FILE) then
-        local content = readfile(USED_FILE)
-        for line in content:gmatch("[^\r\n]+") do
-            set[line] = true
-        end
-    end
-    return set
-end
+local gui = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/gui"))()
+local textbox, button, label = gui.TextBox, gui.Button, gui.Label
 
-local function mark_used(identifier)
-    if appendfile then
-        if not (isfile and isfile(USED_FILE)) and writefile then
-            writefile(USED_FILE, "")
-        end
-        appendfile(USED_FILE, identifier .. "\n")
-    end
-end
+button.MouseButton1Click:Connect(function()
+    local input = textbox.Text
+    local decrypted = xor_deobfuscate(input, CONFIG.salt, CONFIG.xor_shift)
+    local parts = string.split(decrypted, CONFIG.split_char)
+    if #parts ~= 6 or parts[1] ~= CONFIG.header then label.Text = "Invalid format" return end
 
---// Countdown
-local function start_countdown(expiry, onTick, onDone)
-    local function clamp(n) return (n < 0) and 0 or n end
-    task.spawn(function()
-        while true do
-            local remaining = clamp(expiry - os.time())
-            if onTick then onTick(remaining) end
-            if remaining <= 0 then
-                if onDone then onDone() end
-                break
-            end
-            task.wait(1)
-        end
-    end)
-end
+    local validfor = tonumber(parts[2])
+    local expiresat = tonumber(parts[3])
+    local payload = parts[4]
+    local nonce = parts[5]
+    local digest = parts[6]
 
---// Validation
-local function validate_key(encoded)
-    if type(encoded) ~= "string" or encoded == "" then
-        return false, "Empty key", nil, nil
-    end
-
-    local decoded = base64_decode(encoded)
-    if not decoded or decoded == "" then
-        return false, "Invalid Base64", nil, nil
-    end
-
-    local plain = caesar_unshift(decoded, SHIFT)
-    local parts = split_pipe(plain)
-    if #parts ~= 5 or parts[1] ~= "GGL-sandbox" then
-        return false, "Invalid format", nil, nil
-    end
-
-    local expiry_str, payload, digits, digest = parts[2], parts[3], parts[4], parts[5]
-    local expiry = tonumber(expiry_str)
-    if not expiry then
-        return false, "Expiry missing", nil, nil
-    end
-    if os.time() > expiry then
-        return false, "Key expired", nil, nil
-    end
-
-    -- Integrity check
-    local raw = table.concat({expiry_str, payload, digits, SALT}, "|")
-    local check = sha256(raw)
-    if check ~= digest then
-        return false, "Hash mismatch", nil, nil
-    end
-
-    -- Replay protection
-    local used = read_used()
-    local id = digest
-    if used[id] then
-        return false, "Key already used", nil, nil
-    end
-    mark_used(id)
-
-    return true, "Valid key", expiry, plain
-end
-
---// GUI
-local function build_gui()
-    local sg = Instance.new("ScreenGui")
-    sg.Name = "GGLSandboxKeyUI"
-    sg.ResetOnSpawn = false
-    sg.Parent = game:GetService("CoreGui")
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.fromOffset(380, 180)
-    frame.Position = UDim2.new(0.5, -190, 0.3, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
-    frame.BorderSizePixel = 0
-    frame.Parent = sg
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 24)
-    title.Position = UDim2.new(0, 10, 0, 10)
-    title.Text = "GGL Sandbox Key Validator"
-    title.TextColor3 = Color3.fromRGB(220, 220, 230)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.Code
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
-
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(1, -20, 0, 32)
-    box.Position = UDim2.new(0, 10, 0, 44)
-    box.PlaceholderText = "Paste Base64 key here"
-    box.Text = ""
-    box.TextColor3 = Color3.fromRGB(240, 240, 240)
-    box.BackgroundColor3 = Color3.fromRGB(32, 32, 36)
-    box.BorderSizePixel = 0
-    box.ClearTextOnFocus = false
-    box.Font = Enum.Font.Code
-    box.Parent = frame
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 120, 0, 30)
-    btn.Position = UDim2.new(0, 10, 0, 86)
-    btn.Text = "Validate"
-    btn.TextColor3 = Color3.fromRGB(240, 240, 240)
-    btn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
-    btn.BorderSizePixel = 0
-    btn.Font = Enum.Font.Code
-    btn.Parent = frame
-
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -140, 0, 30)
-    status.Position = UDim2.new(0, 140, 0, 86)
-    status.Text = "Waiting..."
-    status.TextColor3 = Color3.fromRGB(200, 200, 200)
-    status.BackgroundTransparency = 1
-    status.Font = Enum.Font.Code
-    status.TextXAlignment = Enum.TextXAlignment.Left
-    status.Parent = frame
-
-    local countdown = Instance.new("TextLabel")
-    countdown.Size = UDim2.new(1, -20, 0, 30)
-    countdown.Position = UDim2.new(0, 10, 0, 126)
-    countdown.Text = "Expires in: —"
-    countdown.TextColor3 = Color3.fromRGB(200, 200, 200)
-    countdown.BackgroundTransparency = 1
-    countdown.Font = Enum.Font.Code
-    countdown.TextXAlignment = Enum.TextXAlignment.Left
-    countdown.Parent = frame
-
-    return {
-        ScreenGui = sg,
-        Frame = frame,
-        Box = box,
-        Button = btn,
-        StatusLabel = status,
-        CountdownLabel = countdown
-    }
-end
-
---// Remote script execution (same as previous version)
-local function run_remote_with_expiry(expiry)
-    local src = game:HttpGet(REMOTE_URL)
-
-    -- Inject expiry into environment so the remote can read it
-    if getgenv and type(getgenv) == "function" then
-        local env = getgenv()
-        env.expiry = expiry
-    else
-        _G.expiry = expiry
-    end
-
-    local fn = loadstring(src)
-    return fn()
-end
-
---// Wire GUI + validation
-local ui = build_gui()
-
-ui.Button.MouseButton1Click:Connect(function()
-    local key = ui.Box.Text
-    ui.StatusLabel.Text = "Validating..."
-    ui.StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-
-    local ok, msg, expiry = validate_key(key)
-    ui.StatusLabel.Text = msg
-
-    if not ok then
-        ui.StatusLabel.TextColor3 = Color3.fromRGB(255, 95, 95)
-        return
-    end
-
-    ui.StatusLabel.TextColor3 = Color3.fromRGB(80, 220, 120)
-
-    start_countdown(expiry,
-        function(rem)
-            ui.CountdownLabel.Text = string.format("Expires in: %ds", rem)
-        end,
-        function()
-            ui.StatusLabel.Text = "Key expired. Please revalidate."
-            ui.StatusLabel.TextColor3 = Color3.fromRGB(255, 170, 80)
-        end
+    local expected = game:GetService("HttpService"):GenerateSHA256(
+        validfor .. CONFIG.split_char ..
+        expiresat .. CONFIG.split_char ..
+        payload .. CONFIG.split_char ..
+        nonce .. CONFIG.split_char ..
+        CONFIG.salt
     )
 
-    -- Execute remote with expiry injected
-    local okExec, err = pcall(run_remote_with_expiry, expiry)
-    if not okExec then
-        ui.StatusLabel.Text = "Remote load failed: " .. tostring(err)
-        ui.StatusLabel.TextColor3 = Color3.fromRGB(255, 140, 140)
+    if digest ~= expected then label.Text = "Digest mismatch" return end
+    if nonce_used(nonce) then label.Text = "Replay detected" return end
+    mark_nonce_used(nonce)
+
+    getgenv()[CONFIG.varexpiry] = expiresat
+    getgenv()[CONFIG.varpayload] = payload
+    getgenv()[CONFIG.varexpired] = false
+    getgenv()[CONFIG.varisexpired] = function()
+        return os.time() >= getgenv()[CONFIG.varexpiry]
+    end
+
+    spawn(function()
+        while true do
+            wait(1)
+            local left = getgenv()[CONFIG.varexpiry] - os.time()
+            if left <= 0 then
+                getgenv()[CONFIG.varexpired] = true
+                label.Text = "Key expired"
+                break
+            else
+                label.Text = "Time left: " .. left .. "s"
+            end
+        end
+    end)
+
+    if not getgenv()[CONFIG.varisexpired]() and CONFIG.execute_payload then
+        loadstring(payload)()
     end
 end)
