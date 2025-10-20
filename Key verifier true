@@ -1,12 +1,12 @@
 -- b64_test.lua
--- This script demonstrates using your b64 module
+-- Standalone tester for your b64 module
 
--- Load the b64 module from your repo
+-- Always use the RAW GitHub URL, not the "blob" page
 local b64 = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
 ))()
 
--- Example data
+-- Example string
 local original = "Hello, Base64 in Lua!"
 
 -- Encode
