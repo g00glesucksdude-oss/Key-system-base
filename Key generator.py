@@ -1,38 +1,111 @@
-import hashlib, time, random, string
-
-CONFIG = {
-    "salt": "secret_salt",
-    "xor_shift": 7,
-    "header": "GGL-sandbox",
-    "split_char": "|",
-    "execute_payload": True,
-    "signal_expiry": True,
-    "validfor": 60,
-    "varexpiry": "myexpiry",
-    "varpayload": "mypayload",
-    "varexpired": "myexpired",
-    "varisexpired": "is_expired"
+local CONFIG = {
+    salt = "secret_salt",
+    xor_shift = 7,
+    header = "GGL-sandbox",
+    split_char = "|",
+    execute_payload = true,
+    signal_expiry = true,
+    validfor = 60, -- seconds
+    varexpiry = "myexpiry",
+    varpayload = "mypayload",
+    varexpired = "myexpired",
+    varisexpired = "is_expired"
 }
 
-def xor_obfuscate(data, salt, shift):
-    return ''.join(chr(ord(c) ^ (ord(salt[i % len(salt)]) ^ shift)) for i, c in enumerate(data))
+-- XOR deobfuscation
+local function xor_deobfuscate(data, salt, shift)
+    local result = {}
+    for i = 1, #data do
+        local key = string.byte(salt:sub((i - 1) % #salt + 1)) ~ shift
+        table.insert(result, string.char(string.byte(data:sub(i, i)) ~ key))
+    end
+    return table.concat(result)
+end
 
-def generate_nonce(length=8):
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+-- Replay protection: check if nonce already used
+local function nonce_used(nonce)
+    local path = "used_nonces.txt"
+    if not isfile(path) then writefile(path, "") end
+    local content = readfile(path) or "" -- safe read
+    for line in string.gmatch(content, "[^\r\n]+") do
+        if line == nonce then
+            return true
+        end
+    end
+    return false
+end
 
-def generate_key(payload):
-    split = CONFIG["split_char"]
-    salt = CONFIG["salt"]
-    shift = CONFIG["xor_shift"]
-    header = CONFIG["header"]
-    validfor = CONFIG["validfor"]
-    expiresat = int(time.time()) + validfor
-    nonce = generate_nonce()
-    digest_input = f"{validfor}{split}{expiresat}{split}{payload}{split}{nonce}{split}{salt}"
-    digest = hashlib.sha256(digest_input.encode()).hexdigest()
-    raw_key = split.join([header, str(validfor), str(expiresat), payload, nonce, digest])
-    return xor_obfuscate(raw_key, salt, shift)
+-- Mark nonce as used
+local function mark_nonce_used(nonce)
+    appendfile("used_nonces.txt", nonce .. "\n")
+end
 
-if __name__ == "__main__":
-    key = generate_key("sandbox_payload")
-    print("Generated Key:", key)
+-- Load GUI
+local gui = loadstring(game:HttpGet("https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/gui"))()
+local textbox, button, label = gui.TextBox, gui.Button, gui.Label
+
+-- Validation logic
+button.MouseButton1Click:Connect(function()
+    local input = textbox.Text
+    local decrypted = xor_deobfuscate(input, CONFIG.salt, CONFIG.xor_shift)
+    local parts = string.split(decrypted, CONFIG.split_char)
+
+    if #parts ~= 6 or parts[1] ~= CONFIG.header then
+        label.Text = "Invalid format"
+        return
+    end
+
+    local validfor = tonumber(parts[2])
+    local expiresat = tonumber(parts[3])
+    local payload = parts[4]
+    local nonce = parts[5]
+    local digest = parts[6]
+
+    -- Recompute digest
+    local expected = game:GetService("HttpService"):GenerateSHA256(
+        validfor .. CONFIG.split_char ..
+        expiresat .. CONFIG.split_char ..
+        payload .. CONFIG.split_char ..
+        nonce .. CONFIG.split_char ..
+        CONFIG.salt
+    )
+
+    if digest ~= expected then
+        label.Text = "Digest mismatch"
+        return
+    end
+
+    if nonce_used(nonce) then
+        label.Text = "Replay detected"
+        return
+    end
+    mark_nonce_used(nonce)
+
+    -- Inject globals
+    getgenv()[CONFIG.varexpiry] = expiresat
+    getgenv()[CONFIG.varpayload] = payload
+    getgenv()[CONFIG.varexpired] = false
+    getgenv()[CONFIG.varisexpired] = function()
+        return os.time() >= getgenv()[CONFIG.varexpiry]
+    end
+
+    -- Countdown updater
+    spawn(function()
+        while true do
+            wait(1)
+            local left = getgenv()[CONFIG.varexpiry] - os.time()
+            if left <= 0 then
+                getgenv()[CONFIG.varexpired] = true
+                label.Text = "Key expired"
+                break
+            else
+                label.Text = "Time left: " .. left .. "s"
+            end
+        end
+    end)
+
+    -- Execute payload if valid
+    if not getgenv()[CONFIG.varisexpired]() and CONFIG.execute_payload then
+        loadstring(payload)()
+    end
+end)
