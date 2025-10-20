@@ -3,7 +3,7 @@
 
 -- Load the b64 module from your repo (use RAW URL!)
 local b64 = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64.lua"
+    "https://raw.githubusercontent.com/g00glesucksdude-oss/Complicated-key-system/main/b64"
 ))()
 
 -- Helper to run a single test
